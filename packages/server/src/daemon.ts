@@ -234,14 +234,54 @@ export function spawnDaemon(
       return false; // lost a concurrent reclaim race
     }
   }
-  const logFd = openSync(logPath(port), 'a');
-  const child = spawn(nodeExec, [scriptPath, ...args], {
-    detached: true,
-    stdio: ['ignore', logFd, logFd],
-  });
-  if (child.pid !== undefined) {
-    writeFileSync(lockFd, String(child.pid), 'utf8');
+  let logFd: number;
+  try {
+    logFd = openSync(logPath(port), 'a');
+  } catch {
+    // Log path unwritable (permissions, disk full). Clean up the lock so we don't leave a ghost.
+    closeSync(lockFd);
+    try {
+      unlinkSync(path);
+    } catch {
+      // racing another reclaimer — fine
+    }
+    return false;
   }
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(nodeExec, [scriptPath, ...args], {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+    });
+  } catch {
+    // spawn can throw synchronously on some platforms (e.g. ENOMEM, invalid args).
+    closeSync(logFd);
+    closeSync(lockFd);
+    try {
+      unlinkSync(path);
+    } catch {
+      // racing another reclaimer — fine
+    }
+    return false;
+  }
+  // The parent's copy of logFd is no longer needed — spawn duplicated it into the child.
+  closeSync(logFd);
+  // Suppress the async ENOENT/EACCES that fires when the executable is missing or unexecutable.
+  // The failure is already detected synchronously via `child.pid === undefined`; without this
+  // handler the error propagates as an uncaught exception and crashes the parent process.
+  child.on('error', () => undefined);
+  if (child.pid === undefined) {
+    // Spawn failed silently (resource exhaustion, invalid executable on some platforms). The pidfile
+    // is empty — clean it up so discovery doesn't see a ghost, and report failure honestly.
+    closeSync(lockFd);
+    try {
+      unlinkSync(path);
+    } catch {
+      // racing another reclaimer — fine
+    }
+    return false;
+  }
+  writeFileSync(lockFd, String(child.pid), 'utf8');
   closeSync(lockFd);
   child.unref();
   return true;
