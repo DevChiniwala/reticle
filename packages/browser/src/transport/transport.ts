@@ -7,6 +7,7 @@ import {
   type ReticleEvent,
 } from '@reticlehq/core';
 import { nativeSetTimeout, nativeNow } from '../timers/native-timers.js';
+import { nativeWarn } from '../timers/native-console.js';
 import { safeStringify } from '../security/serialization.js';
 
 export interface CommandOutcome {
@@ -163,7 +164,7 @@ export class Transport {
       if (event.code === WS_POLICY_VIOLATION) {
         this.#closed = true;
         const reason = event.reason.length > 0 ? event.reason : 'policy violation';
-        console.warn(`[reticle] bridge refused the connection: ${reason} — not retrying.`);
+        nativeWarn(`[reticle] bridge refused the connection: ${reason} — not retrying.`);
         this.#deps.onConnectionLost?.();
         return;
       }

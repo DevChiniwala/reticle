@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as nativeConsole from '../timers/native-console.js';
 import {
   registerStore,
   unregisterStore,
@@ -118,7 +119,7 @@ describe('store registry', () => {
  */
 describe('silent store registration', () => {
   it('warns when a store is registered without any way to observe changes', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     registerStore('getter-only', () => ({ count: 1 }));
     expect(warn).toHaveBeenCalledOnce();
     expect(String(warn.mock.calls[0]?.[0])).toContain('getter-only');
@@ -126,7 +127,7 @@ describe('silent store registration', () => {
   });
 
   it('does NOT warn when a subscribe function is supplied', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     registerStore(
       'observable',
       () => ({ count: 1 }),
@@ -137,7 +138,7 @@ describe('silent store registration', () => {
   });
 
   it('warns ONCE per store — a repeat on every HMR cycle or remount is just noise', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     registerStore('remounted', () => ({ n: 1 }));
     registerStore('remounted', () => ({ n: 2 }));
     registerStore('remounted', () => ({ n: 3 }));
@@ -147,14 +148,14 @@ describe('silent store registration', () => {
 
   it("stays silent for Reticle's OWN read-only store — telling a user to fix our code is absurd", () => {
     // @reticlehq/react registers a render-stats getter the app developer never wrote and cannot change.
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     registerStore('__reticle_renders', () => ({ commits: 0 }));
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
   it('does NOT warn for a store-like object, which carries its own subscribe', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     registerStore('zustand-like', {
       getState: () => ({ count: 1 }),
       subscribe: () => () => undefined,

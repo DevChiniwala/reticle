@@ -49,6 +49,7 @@ import {
 import { actionVerb } from './presenter/presenter-verbs.js';
 import { str, refLabel, modeForCommand, presentStatus } from './reticle-presenter-helpers.js';
 import { resetClock } from './timers/clock.js';
+import { nativeWarn } from './timers/native-console.js';
 import { installRecorder, type RecorderHandle } from './recorder/recorder.js';
 import { Annotator } from './review/annotator.js';
 import type { Teardown } from './observers/types.js';
@@ -341,7 +342,7 @@ export class Reticle {
       // First-connect never succeeded ⇒ the bridge is unreachable at this URL. Tell the developer
       // exactly what went wrong and how to fix it, instead of retrying silently forever.
       onUnreachable: ({ url: tried, attempts }) => {
-        globalThis.console.warn(
+        nativeWarn(
           `[Reticle] could not reach the bridge at ${tried} after ${String(attempts)} attempts. ` +
             `Is the Reticle daemon running on that port? If your app runs in a container/devcontainer/WSL, ` +
             `the daemon is on a different host — set the WS URL explicitly (Vite: VITE_RETICLE_WS_URL, ` +

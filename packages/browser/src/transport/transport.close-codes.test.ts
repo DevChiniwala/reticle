@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RETICLE_PROTOCOL_VERSION, MessageKind, type HelloMessage } from '@reticlehq/core';
+import * as nativeConsole from '../timers/native-console.js';
 import { Transport } from './transport.js';
 
 /**
@@ -79,7 +80,7 @@ describe('transport handles a synchronous WebSocket constructor throw', () => {
 
 describe('transport stops retrying on a 1008 policy-violation close', () => {
   it('does not reconnect after 1008, fires onConnectionLost, and warns with the reason', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
     let lost = 0;
     const t = new Transport({
       url: 'ws://x',

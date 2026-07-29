@@ -1,4 +1,5 @@
 import { RETICLE_RENDERS_STORE } from '@reticlehq/core';
+import { nativeWarn } from '../timers/native-console.js';
 import { sanitizeWithReport, type TruncationReport } from '../security/serialization.js';
 
 /** Store registry — lets the agent pull live framework/store state on demand. */
@@ -168,7 +169,7 @@ const RETICLE_OWNED_STORES = new Set<string>([RETICLE_RENDERS_STORE]);
 function warnSilentStoreOnce(name: string): void {
   if (RETICLE_OWNED_STORES.has(name) || warnedSilent.has(name)) return;
   warnedSilent.add(name);
-  console.warn(
+  nativeWarn(
     `[reticle] store "${name}" was registered without a subscribe function. It can be READ, but its ` +
       `changes are invisible: no STATE_CHANGE events, no state diffs in causal summaries, and a state ` +
       `predicate will never see it update. Pass the store object (or a subscribe callback) to fix.`,
