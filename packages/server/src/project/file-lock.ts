@@ -19,12 +19,20 @@ export function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> 
   // Run after the previous holder settles, regardless of whether it resolved or rejected.
   const run = prev.then(fn, fn);
   // Keep the chain alive but swallow the outcome so one task's rejection never rejects the next waiter.
-  chains.set(
-    path,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
   );
+  chains.set(path, settled);
+  // Reclaim the entry once settled IF no successor queued behind us (the Map still points to our
+  // promise). Without this, every unique path leaks a Map slot for the daemon's lifetime.
+  void settled.then(() => {
+    if (chains.get(path) === settled) chains.delete(path);
+  });
   return run;
+}
+
+/** Exposed for testing — returns the number of active chain entries. */
+export function chainSize(): number {
+  return chains.size;
 }
