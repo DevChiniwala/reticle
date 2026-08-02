@@ -3,14 +3,32 @@ import { DEFAULT_JUNIT_SUITE_NAME, JUnit, TestStatus } from './constants.js';
 import { summarize } from './summary.js';
 import type { SpecResult } from './types.js';
 
-/** Escape the five XML-significant characters in attribute values + text. */
+/**
+ * Characters illegal in XML 1.0 per section 2.2: U+0000-U+0008, U+000B, U+000C, U+000E-U+001F.
+ * Tab (U+0009), newline (U+000A), and carriage return (U+000D) are the only control chars allowed.
+ */
+// eslint-disable-next-line no-control-regex -- intentional: these are the exact chars to strip
+const XML_ILLEGAL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+
+/**
+ * Strip characters illegal in XML 1.0 then escape the five XML-significant characters. Without the
+ * strip, ANSI colour codes in error output produce a document no parser will read — CI shows
+ * nothing instead of showing the failure.
+ */
 function escapeXml(value: string): string {
   return value
+    .replace(XML_ILLEGAL_CHARS, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/** First line of text (for the attribute summary). */
+function firstLine(text: string): string {
+  const nl = text.indexOf('\n');
+  return nl === -1 ? text : text.slice(0, nl);
 }
 
 function seconds(ms: number): string {
@@ -22,8 +40,12 @@ function caseXml(r: SpecResult): string {
     `  <${JUnit.CASE} ${JUnit.ATTR_NAME}="${escapeXml(r.name)}" ` +
     `${JUnit.ATTR_TIME}="${seconds(r.durationMs)}">`;
   if (r.status === TestStatus.FAIL) {
-    const msg = escapeXml(r.error ?? '');
-    return `${open}\n    <${JUnit.FAILURE} ${JUnit.ATTR_MESSAGE}="${msg}"></${JUnit.FAILURE}>\n  </${JUnit.CASE}>`;
+    const full = escapeXml(r.error ?? '');
+    const summary = escapeXml(firstLine(r.error ?? ''));
+    return (
+      `${open}\n    <${JUnit.FAILURE} ${JUnit.ATTR_MESSAGE}="${summary}">` +
+      `${full}</${JUnit.FAILURE}>\n  </${JUnit.CASE}>`
+    );
   }
   if (r.status === TestStatus.SKIP) {
     const msg = escapeXml(r.skipReason ?? '');

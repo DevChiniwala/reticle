@@ -33,6 +33,26 @@ describe('toJUnitXml', () => {
     const xml = toJUnitXml(mixed, { suite: 'my-suite' });
     expect(xml).toContain('name="my-suite"');
   });
+
+  it('strips XML-illegal control characters so the document parses cleanly', () => {
+    const ESC = String.fromCharCode(27);
+    const error = `expected 200, got 500\n${ESC}[31mred${ESC}[0m`;
+    const results: SpecResult[] = [{ name: 'ansi', status: TestStatus.FAIL, durationMs: 5, error }];
+    const xml = toJUnitXml(results);
+    expect(xml).not.toContain(ESC);
+    expect(xml).toContain('[31mred[0m');
+    expect(xml).toContain('<?xml');
+  });
+
+  it('preserves multi-line error text as element content', () => {
+    const error = 'line one\nline two\nline three';
+    const results: SpecResult[] = [
+      { name: 'multi', status: TestStatus.FAIL, durationMs: 3, error },
+    ];
+    const xml = toJUnitXml(results);
+    expect(xml).toContain('message="line one"');
+    expect(xml).toContain('line one\nline two\nline three');
+  });
 });
 
 describe('writeJUnit', () => {
