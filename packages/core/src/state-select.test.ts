@@ -78,6 +78,17 @@ describe('selectPath — Map support', () => {
     const m = new Map([['k', 'v']]);
     expect(selectPath({ m }, 'm')).toEqual({ found: true, value: m });
   });
+
+  it('only reports string keys in availableKeys for a Map (non-string keys omitted)', () => {
+    const m = new Map<unknown, number>([
+      ['str', 1],
+      [42, 2],
+      [Symbol('s'), 3],
+    ]);
+    const r = selectPath({ m }, 'm.missing');
+    expect(r.found).toBe(false);
+    expect(r.availableKeys).toEqual(['str']);
+  });
 });
 
 describe('capDepth — Date/Map/Set handling', () => {
@@ -85,6 +96,11 @@ describe('capDepth — Date/Map/Set handling', () => {
     const d = new Date('2026-01-01T00:00:00Z');
     expect(capDepth(d, 0)).toBe('2026-01-01T00:00:00.000Z');
     expect(capDepth({ t: d }, 1)).toEqual({ t: '2026-01-01T00:00:00.000Z' });
+  });
+
+  it('degrades an invalid Date to null instead of throwing', () => {
+    expect(capDepth(new Date(NaN), 0)).toBeNull();
+    expect(capDepth({ t: new Date('invalid') }, 1)).toEqual({ t: null });
   });
 
   it('converts a Set to an array with depth capping', () => {

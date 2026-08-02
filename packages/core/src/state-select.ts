@@ -20,8 +20,14 @@ const MAX_AVAILABLE_KEYS = 50;
 
 function keysOf(value: unknown): string[] {
   if (Array.isArray(value)) return value.slice(0, MAX_AVAILABLE_KEYS).map((_, i) => String(i));
-  if (value instanceof Map)
-    return [...value.keys()].slice(0, MAX_AVAILABLE_KEYS).map((k) => String(k));
+  if (value instanceof Map) {
+    const out: string[] = [];
+    for (const k of value.keys()) {
+      if (typeof k === 'string') out.push(k);
+      if (out.length >= MAX_AVAILABLE_KEYS) break;
+    }
+    return out;
+  }
   if (typeof value === 'object' && value !== null)
     return Object.keys(value).slice(0, MAX_AVAILABLE_KEYS);
   return [];
@@ -75,7 +81,7 @@ export function selectPath(root: unknown, path: string): PathSelection {
  */
 export function capDepth(value: unknown, maxDepth: number): unknown {
   if (maxDepth < 0) return value;
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
   if (value instanceof Set) {
     if (maxDepth === 0) return `[Set(${String(value.size)})]`;
     return [...value].map((v) => capDepth(v, maxDepth - 1));
