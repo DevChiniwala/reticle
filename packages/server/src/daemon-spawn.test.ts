@@ -56,11 +56,11 @@ describe('spawnDaemon with injectable deps', () => {
   }
 
   it('spawns successfully and writes the pid to the pidfile', () => {
-    const { deps, wasSpawned } = makeDeps();
-    const ok = spawnDaemon('node', 'script.mjs', ['--port', '4000'], 4000, deps);
+    const harness = makeDeps();
+    const ok = spawnDaemon('node', 'script.mjs', ['--port', '4000'], 4000, harness.deps);
 
     expect(ok).toBe(true);
-    expect(wasSpawned()).toBe(true);
+    expect(harness.wasSpawned()).toBe(true);
     const pidFile = join(home, 'daemon-4000.pid');
     expect(existsSync(pidFile)).toBe(true);
     expect(readFileSync(pidFile, 'utf8')).toBe('12345');
