@@ -46,8 +46,19 @@ describe('isSensitiveKey — presigned URL credential parameters', () => {
     }
   });
 
-  it('does NOT match AWS non-secret presigned URL parameters', () => {
-    for (const k of ['X-Amz-Algorithm', 'X-Amz-Date', 'X-Amz-Expires', 'X-Amz-SignedHeaders']) {
+  it('does NOT match AWS/GCS non-secret presigned URL parameters', () => {
+    for (const k of [
+      'X-Amz-Algorithm',
+      'X-Amz-Date',
+      'X-Amz-Expires',
+      'X-Amz-SignedHeaders',
+      'X-Amz-SignatureVersion',
+      'X-Amz-CredentialScope',
+      'X-Goog-Algorithm',
+      'X-Goog-Date',
+      'X-Goog-Expires',
+      'X-Goog-SignatureVersion',
+    ]) {
       expect(isSensitiveKey(k), `expected "${k}" to NOT be sensitive`).toBe(false);
     }
   });

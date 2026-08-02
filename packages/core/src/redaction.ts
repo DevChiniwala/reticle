@@ -19,7 +19,7 @@ import { REDACTED_VALUE } from './constants.js';
 // unredacted), NOT any key that merely contains the substring — `scopecookie`, `cookieConsent`,
 // `cookiePolicy` are legitimate app values an agent may need to read, and stay visible.
 const SENSITIVE_KEY =
-  /password|passwd|passcode|secret|(?:(?:access|refresh|auth|bearer|api|id|session|csrf|client)[-_]?tokens?|(?:^|[-_])tokens?(?=$|[-_]))|session[-_]?id|(?:^|[-_])(?:sid|pwd|jwt)(?=$|[-_])|authorization|(?:^|[-_])(?:set[-_])?cookie(?=$|[-_])|api[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|credit[-_]?card|card[-_]?number|cvv|cvc|ssn|(?:^|[-_])(?:signature|sig)$|(?:^|[-_])credential$|x-(?:amz|goog)-(?:signature|credential|security-token)/i;
+  /password|passwd|passcode|secret|(?:(?:access|refresh|auth|bearer|api|id|session|csrf|client)[-_]?tokens?|(?:^|[-_])tokens?(?=$|[-_]))|session[-_]?id|(?:^|[-_])(?:sid|pwd|jwt)(?=$|[-_])|authorization|(?:^|[-_])(?:set[-_])?cookie(?=$|[-_])|api[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|credit[-_]?card|card[-_]?number|cvv|cvc|ssn|(?:^|[-_])(?:signature|sig)$|(?:^|[-_])credential$|x-(?:amz|goog)-(?:signature|credential|security-token)$/i;
 
 export function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY.test(key);
