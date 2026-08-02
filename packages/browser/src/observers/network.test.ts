@@ -109,6 +109,9 @@ describe('redactUrl', () => {
     expect(redactUrl('https://alice:s3cr3t@api.example.com/data?page=1&q=hello%20world')).toBe(
       'https://[REDACTED]@api.example.com/data?page=1&q=hello%20world',
     );
+    expect(
+      redactUrl('https://app.example.com/callback?next=%2Fdashboard&lang=en#access_token=abc123'),
+    ).toBe('https://app.example.com/callback?next=%2Fdashboard&lang=en#access_token=[REDACTED]');
   });
 });
 
