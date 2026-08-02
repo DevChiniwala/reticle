@@ -21,8 +21,8 @@ import {
 
 const RETICLE_HOME = join(homedir(), '.reticle');
 
-function pidPath(port: number): string {
-  return join(RETICLE_HOME, `daemon-${port}.pid`);
+function pidPath(port: number, home: string = RETICLE_HOME): string {
+  return join(home, `daemon-${port}.pid`);
 }
 
 function registryPath(port: number): string {
@@ -34,7 +34,7 @@ export function logPath(port: number): string {
 }
 
 export function readPid(port: number, home: string = RETICLE_HOME): number | null {
-  const path = join(home, `daemon-${port}.pid`);
+  const path = pidPath(port, home);
   if (!existsSync(path)) return null;
   const n = parseInt(readFileSync(path, 'utf8').trim(), 10);
   return isNaN(n) ? null : n;
