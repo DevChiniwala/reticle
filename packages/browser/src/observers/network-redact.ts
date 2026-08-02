@@ -36,13 +36,17 @@ export function redactUrl(raw: string): string {
   let newQuery = query;
   if (query !== '') {
     const params = new URLSearchParams(query);
+    let queryChanged = false;
     for (const key of [...params.keys()]) {
       if (isSensitiveKey(key)) {
         params.set(key, REDACTED_VALUE);
-        changed = true;
+        queryChanged = true;
       }
     }
-    newQuery = params.toString();
+    if (queryChanged) {
+      newQuery = params.toString();
+      changed = true;
+    }
   }
 
   const segments = authority.split('/');

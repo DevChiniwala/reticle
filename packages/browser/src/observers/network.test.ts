@@ -99,6 +99,17 @@ describe('redactUrl', () => {
     );
     expect(redactUrl('https://app.com/page#section-two')).toBe('https://app.com/page#section-two');
   });
+  it('preserves the query byte-for-byte when only path/userinfo/fragment was redacted', () => {
+    expect(
+      redactUrl('https://app.example.com/reset/abcdefghijklmnop?next=/a%20b&sort=name%3Aasc'),
+    ).toBe('https://app.example.com/reset/[REDACTED]?next=/a%20b&sort=name%3Aasc');
+    expect(redactUrl('https://app.example.com/reset/abcdefghijklmnop?debug')).toBe(
+      'https://app.example.com/reset/[REDACTED]?debug',
+    );
+    expect(redactUrl('https://alice:s3cr3t@api.example.com/data?page=1&q=hello%20world')).toBe(
+      'https://[REDACTED]@api.example.com/data?page=1&q=hello%20world',
+    );
+  });
 });
 
 describe('extractTiming (PerformanceResourceTiming → TTFB/transferSize)', () => {
