@@ -1,107 +1,174 @@
-/**
- * spawnDaemon: verifies the parent closes the log fd, reports failure when spawn yields no pid, and
- * handles synchronous spawn errors without leaving ghost pidfiles.
- *
- * These tests operate against the REAL ~/.reticle directory (RETICLE_HOME is a module-level constant
- * computed at import time, not injectable). Unique high port numbers avoid collisions with any live
- * daemon. Each test cleans up its pidfile + log + registry entry in afterEach.
- */
-import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { spawnDaemon, readPid, logPath, removePid } from './daemon.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  openSync,
+  closeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnDaemon, type SpawnDaemonDeps, type SpawnedChild } from './daemon.js';
 
-/** Ports far above any plausible daemon — avoids collisions with real instances. */
-const BASE_PORT = 59_100;
-let nextPort = BASE_PORT;
-function uniquePort(): number {
-  return nextPort++;
-}
+describe('spawnDaemon with injectable deps', () => {
+  let home: string;
 
-/** Tracks spawned children so we can kill them even if the test fails mid-way. */
-const spawnedPorts: number[] = [];
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'reticle-spawn-test-'));
+  });
 
-afterEach(() => {
-  for (const port of spawnedPorts) {
-    const pid = readPid(port);
-    if (pid !== null) {
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {
-        // already exited — fine
-      }
-    }
-    removePid(port, pid ?? process.pid);
-    // Clean up the log file best-effort.
-    try {
-      const log = logPath(port);
-      if (existsSync(log)) unlinkSync(log);
-    } catch {
-      // non-critical
-    }
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  function makeDeps(overrides?: Partial<SpawnDaemonDeps>): {
+    deps: SpawnDaemonDeps;
+    opened: Array<{ path: string; flags: string; fd: number }>;
+    closed: number[];
+    wasSpawned(): boolean;
+  } {
+    const opened: Array<{ path: string; flags: string; fd: number }> = [];
+    const closed: number[] = [];
+    let spawned = false;
+
+    const deps: SpawnDaemonDeps = {
+      home,
+      openFile: (path, flags) => {
+        const fd = openSync(path, flags);
+        opened.push({ path, flags, fd });
+        return fd;
+      },
+      closeFile: (fd) => {
+        closed.push(fd);
+        closeSync(fd);
+      },
+      spawnChild: () => {
+        spawned = true;
+        return { pid: 12345, on: () => undefined, unref: () => undefined };
+      },
+      pidAlive: () => false,
+      ...overrides,
+    };
+
+    return { deps, opened, closed, wasSpawned: () => spawned };
   }
-  spawnedPorts.length = 0;
-});
 
-describe('spawnDaemon', () => {
-  it('spawns a real process and writes its pid', () => {
-    const port = uniquePort();
-    spawnedPorts.push(port);
-    const script = join(tmpdir(), `reticle-test-${port}.mjs`);
-    writeFileSync(script, 'setTimeout(() => process.exit(0), 200);', 'utf8');
+  it('spawns successfully and writes the pid to the pidfile', () => {
+    const { deps } = makeDeps();
+    const ok = spawnDaemon('node', 'script.mjs', ['--port', '4000'], 4000, deps);
 
-    const ok = spawnDaemon(process.execPath, script, [], port);
     expect(ok).toBe(true);
-
-    const pid = readPid(port);
-    expect(pid).not.toBeNull();
-    expect(typeof pid).toBe('number');
-    expect(pid).toBeGreaterThan(0);
+    const pidFile = join(home, 'daemon-4000.pid');
+    expect(existsSync(pidFile)).toBe(true);
+    expect(readFileSync(pidFile, 'utf8')).toBe('12345');
   });
 
-  it('returns false when the executable does not exist (spawn fails)', () => {
-    const port = uniquePort();
-    spawnedPorts.push(port);
+  it('closes the log fd in the parent after spawn', () => {
+    const { deps, opened, closed } = makeDeps();
+    spawnDaemon('node', 'script.mjs', [], 4001, deps);
 
-    const ok = spawnDaemon('/nonexistent/node', '/nonexistent/script.mjs', [], port);
-    // On most platforms, spawn with a missing executable sets child.pid to undefined.
-    // On platforms where spawn throws synchronously, the catch path returns false.
-    // Either way: no ghost pidfile left behind.
+    const logEntry = opened.find((e) => e.flags === 'a');
+    expect(logEntry).toBeDefined();
+    expect(closed).toContain(logEntry?.fd);
+  });
+
+  it('closes the lock fd after writing the pid', () => {
+    const { deps, opened, closed } = makeDeps();
+    spawnDaemon('node', 'script.mjs', [], 4002, deps);
+
+    const lockEntry = opened.find((e) => e.flags === 'wx');
+    expect(lockEntry).toBeDefined();
+    expect(closed).toContain(lockEntry?.fd);
+  });
+
+  it('returns false and cleans up when openFile(log) throws', () => {
+    const realOpened: Array<{ path: string; flags: string; fd: number }> = [];
+    let callCount = 0;
+    const { deps, closed } = makeDeps({
+      openFile: (path, flags) => {
+        callCount += 1;
+        if (callCount === 2) throw new Error('disk full');
+        const fd = openSync(path, flags);
+        realOpened.push({ path, flags, fd });
+        return fd;
+      },
+    });
+
+    const ok = spawnDaemon('node', 'script.mjs', [], 4003, deps);
+
     expect(ok).toBe(false);
+    expect(realOpened.length).toBe(1);
+    expect(closed).toContain(realOpened[0]?.fd);
+    expect(existsSync(join(home, 'daemon-4003.pid'))).toBe(false);
   });
 
-  it('closes the log fd in the parent (no leaked descriptors)', () => {
-    const port = uniquePort();
-    spawnedPorts.push(port);
-    const script = join(tmpdir(), `reticle-test-${port}.mjs`);
-    writeFileSync(script, 'process.exit(0);', 'utf8');
+  it('returns false and cleans up when spawnChild throws', () => {
+    const { deps, opened, closed } = makeDeps({
+      spawnChild: () => {
+        throw new Error('ENOMEM');
+      },
+    });
 
-    const ok = spawnDaemon(process.execPath, script, [], port);
+    const ok = spawnDaemon('node', 'script.mjs', [], 4004, deps);
+
+    expect(ok).toBe(false);
+    const lockEntry = opened.find((e) => e.flags === 'wx');
+    const logEntry = opened.find((e) => e.flags === 'a');
+    expect(lockEntry).toBeDefined();
+    expect(logEntry).toBeDefined();
+    expect(closed).toContain(lockEntry?.fd);
+    expect(closed).toContain(logEntry?.fd);
+    expect(existsSync(join(home, 'daemon-4004.pid'))).toBe(false);
+  });
+
+  it('returns false and cleans up when child.pid is undefined', () => {
+    const undefinedPidChild: SpawnedChild = {
+      pid: undefined,
+      on: () => undefined,
+      unref: () => undefined,
+    };
+    const { deps, opened, closed } = makeDeps({
+      spawnChild: () => undefinedPidChild,
+    });
+
+    const ok = spawnDaemon('node', 'script.mjs', [], 4005, deps);
+
+    expect(ok).toBe(false);
+    const lockEntry = opened.find((e) => e.flags === 'wx');
+    const logEntry = opened.find((e) => e.flags === 'a');
+    expect(closed).toContain(lockEntry?.fd);
+    expect(closed).toContain(logEntry?.fd);
+    expect(existsSync(join(home, 'daemon-4005.pid'))).toBe(false);
+  });
+
+  it('returns false without spawning when a live daemon owns the port', () => {
+    let spawned = false;
+    const { deps } = makeDeps({
+      pidAlive: () => true,
+      spawnChild: () => {
+        spawned = true;
+        return { pid: 12345, on: () => undefined, unref: () => undefined };
+      },
+    });
+    const pidFile = join(home, 'daemon-4006.pid');
+    writeFileSync(pidFile, '99999', 'utf8');
+
+    const ok = spawnDaemon('node', 'script.mjs', [], 4006, deps);
+
+    expect(ok).toBe(false);
+    expect(spawned).toBe(false);
+  });
+
+  it('reclaims a stale pidfile and spawns successfully', () => {
+    const pidFile = join(home, 'daemon-4007.pid');
+    writeFileSync(pidFile, '11111', 'utf8');
+
+    const { deps } = makeDeps({ pidAlive: () => false });
+    const ok = spawnDaemon('node', 'script.mjs', [], 4007, deps);
+
     expect(ok).toBe(true);
-
-    // The log file exists and is writable from the parent (not locked by a leaked fd).
-    const log = logPath(port);
-    expect(existsSync(log)).toBe(true);
-    expect(() => writeFileSync(log, 'test\n', { flag: 'a' })).not.toThrow();
-  });
-
-  it('does not spawn a duplicate when a live daemon already owns the port', () => {
-    const port = uniquePort();
-    spawnedPorts.push(port);
-    // A script that stays alive until killed — the afterEach hook sends SIGTERM.
-    const script = join(tmpdir(), `reticle-test-${port}.mjs`);
-    writeFileSync(
-      script,
-      'setInterval(() => {}, 1000); process.on("SIGTERM", () => process.exit(0));',
-      'utf8',
-    );
-
-    const first = spawnDaemon(process.execPath, script, [], port);
-    expect(first).toBe(true);
-
-    // Second attempt on the same port — pidfile exists with a live pid.
-    const second = spawnDaemon(process.execPath, script, [], port);
-    expect(second).toBe(false);
+    expect(readFileSync(pidFile, 'utf8')).toBe('12345');
   });
 });

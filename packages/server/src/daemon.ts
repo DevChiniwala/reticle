@@ -33,8 +33,8 @@ export function logPath(port: number): string {
   return join(RETICLE_HOME, `daemon-${port}.log`);
 }
 
-export function readPid(port: number): number | null {
-  const path = pidPath(port);
+export function readPid(port: number, home: string = RETICLE_HOME): number | null {
+  const path = join(home, `daemon-${port}.pid`);
   if (!existsSync(path)) return null;
   const n = parseInt(readFileSync(path, 'utf8').trim(), 10);
   return isNaN(n) ? null : n;
@@ -205,67 +205,103 @@ export function reclaimStaleDaemons(
   return reclaimed;
 }
 
+/** The minimal shape of a spawned child that spawnDaemon uses. */
+export interface SpawnedChild {
+  readonly pid?: number | undefined;
+  on(event: string, handler: (...args: unknown[]) => void): unknown;
+  unref(): void;
+}
+
+/** Injectable deps for spawnDaemon — the testability seam. Defaults to the real implementations. */
+export interface SpawnDaemonDeps {
+  readonly home: string;
+  openFile(path: string, flags: string): number;
+  closeFile(fd: number): void;
+  spawnChild(
+    command: string,
+    args: readonly string[],
+    options: { detached: boolean; stdio: readonly ('ignore' | number)[] },
+  ): SpawnedChild;
+  pidAlive(pid: number): boolean;
+}
+
+export function defaultSpawnDaemonDeps(): SpawnDaemonDeps {
+  return {
+    home: RETICLE_HOME,
+    openFile: openSync,
+    closeFile: closeSync,
+    spawnChild: (command, args, options) =>
+      spawn(command, [...args], { detached: options.detached, stdio: [...options.stdio] }),
+    pidAlive: isAlive,
+  };
+}
+
 /**
  * Spawn the reticle daemon as a detached background process, redirecting output to the log file.
  * Writes the PID file from the parent before returning so callers can call isRunning
  * immediately without a race window.
+ *
+ * `deps` is injectable for testing (default: real fs/spawn against ~/.reticle). The same seam
+ * pattern as reclaimStaleDaemons(home, pidAlive).
  */
 export function spawnDaemon(
   nodeExec: string,
   scriptPath: string,
   args: string[],
   port: number,
+  deps: SpawnDaemonDeps = defaultSpawnDaemonDeps(),
 ): boolean {
-  mkdirSync(RETICLE_HOME, { recursive: true });
-  const path = pidPath(port);
+  mkdirSync(deps.home, { recursive: true });
+  const pidFilePath = join(deps.home, `daemon-${port}.pid`);
+  const logFilePath = join(deps.home, `daemon-${port}.log`);
   // O_EXCL spawn-lock: only the FIRST racer to create the pidfile spawns. A concurrent second gets
   // EEXIST — if a LIVE daemon owns the port it skips (no duplicate detached daemon, no clobbered pid);
   // a stale pidfile from a crashed daemon is reclaimed. Returns false when it did not spawn.
   let lockFd: number;
   try {
-    lockFd = openSync(path, 'wx');
+    lockFd = deps.openFile(pidFilePath, 'wx');
   } catch {
-    const existing = readPid(port);
-    if (existing !== null && isAlive(existing)) return false;
+    const existing = readPid(port, deps.home);
+    if (existing !== null && deps.pidAlive(existing)) return false;
     try {
-      unlinkSync(path);
-      lockFd = openSync(path, 'wx');
+      unlinkSync(pidFilePath);
+      lockFd = deps.openFile(pidFilePath, 'wx');
     } catch {
       return false; // lost a concurrent reclaim race
     }
   }
   let logFd: number;
   try {
-    logFd = openSync(logPath(port), 'a');
+    logFd = deps.openFile(logFilePath, 'a');
   } catch {
     // Log path unwritable (permissions, disk full). Clean up the lock so we don't leave a ghost.
-    closeSync(lockFd);
+    deps.closeFile(lockFd);
     try {
-      unlinkSync(path);
+      unlinkSync(pidFilePath);
     } catch {
       // racing another reclaimer — fine
     }
     return false;
   }
-  let child: ReturnType<typeof spawn>;
+  let child: SpawnedChild;
   try {
-    child = spawn(nodeExec, [scriptPath, ...args], {
+    child = deps.spawnChild(nodeExec, [scriptPath, ...args], {
       detached: true,
       stdio: ['ignore', logFd, logFd],
     });
   } catch {
     // spawn can throw synchronously on some platforms (e.g. ENOMEM, invalid args).
-    closeSync(logFd);
-    closeSync(lockFd);
+    deps.closeFile(logFd);
+    deps.closeFile(lockFd);
     try {
-      unlinkSync(path);
+      unlinkSync(pidFilePath);
     } catch {
       // racing another reclaimer — fine
     }
     return false;
   }
   // The parent's copy of logFd is no longer needed — spawn duplicated it into the child.
-  closeSync(logFd);
+  deps.closeFile(logFd);
   // Suppress the async ENOENT/EACCES that fires when the executable is missing or unexecutable.
   // The failure is already detected synchronously via `child.pid === undefined`; without this
   // handler the error propagates as an uncaught exception and crashes the parent process.
@@ -273,16 +309,16 @@ export function spawnDaemon(
   if (child.pid === undefined) {
     // Spawn failed silently (resource exhaustion, invalid executable on some platforms). The pidfile
     // is empty — clean it up so discovery doesn't see a ghost, and report failure honestly.
-    closeSync(lockFd);
+    deps.closeFile(lockFd);
     try {
-      unlinkSync(path);
+      unlinkSync(pidFilePath);
     } catch {
       // racing another reclaimer — fine
     }
     return false;
   }
   writeFileSync(lockFd, String(child.pid), 'utf8');
-  closeSync(lockFd);
+  deps.closeFile(lockFd);
   child.unref();
   return true;
 }
