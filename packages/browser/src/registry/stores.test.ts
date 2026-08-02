@@ -109,6 +109,34 @@ describe('store registry', () => {
   });
 });
 
+describe('registerStore — rejects non-callable, non-StoreLike sources', () => {
+  it('rejects {subscribe} without getState: warns about the missing getState, does not register', () => {
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
+    const svelteish = {
+      subscribe: (_fn: () => void) => () => undefined,
+      set: () => undefined,
+    };
+    registerStore('svelte-bad', svelteish as unknown as Parameters<typeof registerStore>[1]);
+    expect(storeNames()).not.toContain('svelte-bad');
+    expect(warn).toHaveBeenCalledOnce();
+    const msg = String(warn.mock.calls[0]?.[0]);
+    expect(msg).toContain('svelte-bad');
+    expect(msg).toContain('getState');
+    warn.mockRestore();
+  });
+
+  it('rejects a plain object with no subscribe and no getState', () => {
+    const warn = vi.spyOn(nativeConsole, 'nativeWarn').mockImplementation(() => undefined);
+    registerStore('bad-obj', { foo: 1 } as unknown as Parameters<typeof registerStore>[1]);
+    expect(storeNames()).not.toContain('bad-obj');
+    expect(warn).toHaveBeenCalledOnce();
+    const msg = String(warn.mock.calls[0]?.[0]);
+    expect(msg).toContain('bad-obj');
+    expect(msg).not.toContain('has subscribe but no getState');
+    warn.mockRestore();
+  });
+});
+
 /**
  * A store registered with only a getter is READABLE but SILENT: reticle_state can read it on demand,
  * yet nothing ever emits a STATE_CHANGE, so causal summaries show no state diff and a state predicate

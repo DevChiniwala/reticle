@@ -67,6 +67,16 @@ export function registerStore(
     notifyRegistered(name, getter, sub);
     return;
   }
+  if (typeof source !== 'function') {
+    const hasSubscribe = typeof source === 'object' && source !== null && 'subscribe' in source;
+    nativeWarn(
+      `[reticle] store "${name}" is neither a getter function nor a {getState, subscribe} store` +
+        (hasSubscribe
+          ? ` — it has subscribe but no getState. Wrap it with an adapter or add getState.`
+          : '.'),
+    );
+    return;
+  }
   stores.set(name, source);
   if (subscribe !== undefined) {
     subscribers.set(name, subscribe);
