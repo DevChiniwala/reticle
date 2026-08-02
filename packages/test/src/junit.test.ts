@@ -4,6 +4,9 @@ import { TestStatus } from './constants.js';
 import type { FileSystemPort } from '@reticlehq/server';
 import type { SpecResult } from './types.js';
 
+// eslint-disable-next-line no-control-regex -- intentional: detect any illegal XML chars that survived
+const XML_ILLEGAL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+
 const mixed: SpecResult[] = [
   { name: 'passes', status: TestStatus.PASS, durationMs: 12 },
   { name: 'breaks <&>', status: TestStatus.FAIL, durationMs: 7, error: 'no signal & "x"' },
@@ -34,17 +37,17 @@ describe('toJUnitXml', () => {
     expect(xml).toContain('name="my-suite"');
   });
 
-  it('strips XML-illegal control characters so the document parses cleanly', () => {
+  it('strips XML-illegal control characters so no illegal byte survives in the output', () => {
     const ESC = String.fromCharCode(27);
     const error = `expected 200, got 500\n${ESC}[31mred${ESC}[0m`;
     const results: SpecResult[] = [{ name: 'ansi', status: TestStatus.FAIL, durationMs: 5, error }];
     const xml = toJUnitXml(results);
     expect(xml).not.toContain(ESC);
     expect(xml).toContain('[31mred[0m');
-    expect(xml).toContain('<?xml');
+    expect(XML_ILLEGAL_CHARS.test(xml)).toBe(false);
   });
 
-  it('preserves multi-line error text as element content', () => {
+  it('preserves multi-line error text: summary in attribute, full text in element content', () => {
     const error = 'line one\nline two\nline three';
     const results: SpecResult[] = [
       { name: 'multi', status: TestStatus.FAIL, durationMs: 3, error },
@@ -52,6 +55,17 @@ describe('toJUnitXml', () => {
     const xml = toJUnitXml(results);
     expect(xml).toContain('message="line one"');
     expect(xml).toContain('line one\nline two\nline three');
+    expect(XML_ILLEGAL_CHARS.test(xml)).toBe(false);
+  });
+
+  it('handles CRLF and CR line breaks in firstLine extraction', () => {
+    const results: SpecResult[] = [
+      { name: 'crlf', status: TestStatus.FAIL, durationMs: 1, error: 'first\r\nsecond\r\nthird' },
+      { name: 'cr', status: TestStatus.FAIL, durationMs: 1, error: 'alpha\rbeta' },
+    ];
+    const xml = toJUnitXml(results);
+    expect(xml).toContain('message="first"');
+    expect(xml).toContain('message="alpha"');
   });
 });
 

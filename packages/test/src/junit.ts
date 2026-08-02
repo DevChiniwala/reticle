@@ -25,10 +25,10 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-/** First line of text (for the attribute summary). */
+/** First line of text (for the attribute summary). Handles LF, CRLF, and bare CR. */
 function firstLine(text: string): string {
-  const nl = text.indexOf('\n');
-  return nl === -1 ? text : text.slice(0, nl);
+  const match = /\r?\n|\r/.exec(text);
+  return match === null ? text : text.slice(0, match.index);
 }
 
 function seconds(ms: number): string {
