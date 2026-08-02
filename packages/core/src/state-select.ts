@@ -20,6 +20,8 @@ const MAX_AVAILABLE_KEYS = 50;
 
 function keysOf(value: unknown): string[] {
   if (Array.isArray(value)) return value.slice(0, MAX_AVAILABLE_KEYS).map((_, i) => String(i));
+  if (value instanceof Map)
+    return [...value.keys()].slice(0, MAX_AVAILABLE_KEYS).map((k) => String(k));
   if (typeof value === 'object' && value !== null)
     return Object.keys(value).slice(0, MAX_AVAILABLE_KEYS);
   return [];
@@ -46,6 +48,13 @@ export function selectPath(root: unknown, path: string): PathSelection {
       current = current[index];
       continue;
     }
+    if (current instanceof Map) {
+      if (current.has(segment)) {
+        current = current.get(segment);
+        continue;
+      }
+      return { found: false, value: null, availableKeys: keysOf(current) };
+    }
     // `Object.hasOwn`, not `in`: `in` walks the prototype, so a path segment of `constructor`,
     // `__proto__`, or `toString` reported found:true and returned a function from Object.prototype —
     // a state assertion on a typo'd path silently passed against a builtin instead of failing with
@@ -66,6 +75,17 @@ export function selectPath(root: unknown, path: string): PathSelection {
  */
 export function capDepth(value: unknown, maxDepth: number): unknown {
   if (maxDepth < 0) return value;
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Set) {
+    if (maxDepth === 0) return `[Set(${String(value.size)})]`;
+    return [...value].map((v) => capDepth(v, maxDepth - 1));
+  }
+  if (value instanceof Map) {
+    if (maxDepth === 0) return `{Map(${String(value.size)})}`;
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    for (const [k, v] of value) out[String(k)] = capDepth(v, maxDepth - 1);
+    return out;
+  }
   if (Array.isArray(value)) {
     if (maxDepth === 0) return `[Array(${String(value.length)})]`;
     return value.map((v) => capDepth(v, maxDepth - 1));

@@ -55,6 +55,68 @@ describe('selectPath', () => {
   });
 });
 
+describe('selectPath — Map support', () => {
+  it('walks into a Map by string key', () => {
+    const state = { byId: new Map([['a', { name: 'alice' }]]) };
+    expect(selectPath(state, 'byId.a.name')).toEqual({ found: true, value: 'alice' });
+  });
+
+  it('reports available Map keys on a miss', () => {
+    const state = {
+      byId: new Map([
+        ['x', 1],
+        ['y', 2],
+      ]),
+    };
+    const r = selectPath(state, 'byId.z');
+    expect(r.found).toBe(false);
+    expect(r.availableKeys).toContain('x');
+    expect(r.availableKeys).toContain('y');
+  });
+
+  it('returns the Map itself when the path stops at it', () => {
+    const m = new Map([['k', 'v']]);
+    expect(selectPath({ m }, 'm')).toEqual({ found: true, value: m });
+  });
+});
+
+describe('capDepth — Date/Map/Set handling', () => {
+  it('treats Date as a leaf and returns its ISO string at any depth', () => {
+    const d = new Date('2026-01-01T00:00:00Z');
+    expect(capDepth(d, 0)).toBe('2026-01-01T00:00:00.000Z');
+    expect(capDepth({ t: d }, 1)).toEqual({ t: '2026-01-01T00:00:00.000Z' });
+  });
+
+  it('converts a Set to an array with depth capping', () => {
+    const s = new Set(['a', 'b']);
+    expect(capDepth(s, 1)).toEqual(['a', 'b']);
+    expect(capDepth(s, 0)).toBe('[Set(2)]');
+  });
+
+  it('converts a Map to an object with depth capping', () => {
+    const m = new Map<string, unknown>([['x', { nested: 1 }]]);
+    expect(capDepth(m, 2)).toEqual({ x: { nested: 1 } });
+    expect(capDepth(m, 1)).toEqual({ x: '{…1 keys}' });
+    expect(capDepth(m, 0)).toBe('{Map(1)}');
+  });
+
+  it('recurses through nested Date/Map/Set correctly', () => {
+    const state = {
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      selected: new Set(['a', 'b']),
+      byId: new Map([['a', 1]]),
+      n: 5,
+    };
+    const capped = capDepth(state, 3);
+    expect(capped).toEqual({
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      selected: ['a', 'b'],
+      byId: { a: 1 },
+      n: 5,
+    });
+  });
+});
+
 describe('capDepth', () => {
   it('a negative budget means no cap (value returned unchanged)', () => {
     const deep = { a: { b: { c: 1 } } };
