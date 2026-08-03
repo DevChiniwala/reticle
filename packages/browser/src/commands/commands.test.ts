@@ -199,10 +199,11 @@ describe('command registry (driven by the bridge)', () => {
   });
 
   it('QUERY forwards the component field into the auto-anchor resolution path', () => {
-    document.body.innerHTML = '<button>Submit</button>';
+    const MARKER = 'data-query-component-test';
+    document.body.innerHTML = `<button ${MARKER}>Submit</button>`;
     registerAdapter({
       name: 'query_component_test',
-      identify: (el) => (el.tagName === 'BUTTON' ? { componentStack: ['SubmitButton'] } : null),
+      identify: (el) => (el.hasAttribute(MARKER) ? { componentStack: ['SubmitButton'] } : null),
       readState: () => undefined,
     });
     const result = run(ReticleCommand.QUERY, { component: 'SubmitButton' }) as {
@@ -220,6 +221,17 @@ describe('command registry (driven by the bridge)', () => {
     }) as { elements: unknown[]; count: number };
     expect(result.count).toBe(1);
     expect(result.elements).toHaveLength(1);
+  });
+
+  it('QUERY with malformed source returns empty results (no crash)', () => {
+    document.body.innerHTML = '<button>Click</button>';
+    for (const bad of [null, 'string', 42, { file: 'x' }, { line: 1 }]) {
+      const result = run(ReticleCommand.QUERY, { source: bad }) as {
+        elements: unknown[];
+        count: number;
+      };
+      expect(result.count).toBe(0);
+    }
   });
 
   it('CAPABILITIES returns the registered capabilities', () => {
