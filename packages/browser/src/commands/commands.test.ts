@@ -198,6 +198,30 @@ describe('command registry (driven by the bridge)', () => {
     unregisterStore('state_ws');
   });
 
+  it('QUERY forwards the component field into the auto-anchor resolution path', () => {
+    document.body.innerHTML = '<button>Submit</button>';
+    registerAdapter({
+      name: 'query_component_test',
+      identify: (el) => (el.tagName === 'BUTTON' ? { componentStack: ['SubmitButton'] } : null),
+      readState: () => undefined,
+    });
+    const result = run(ReticleCommand.QUERY, { component: 'SubmitButton' }) as {
+      elements: unknown[];
+      count: number;
+    };
+    expect(result.count).toBe(1);
+    expect(result.elements).toHaveLength(1);
+  });
+
+  it('QUERY forwards the source field into the auto-anchor resolution path', () => {
+    document.body.innerHTML = '<input data-reticle-source="form.tsx:42:5" placeholder="Email" />';
+    const result = run(ReticleCommand.QUERY, {
+      source: { file: 'form.tsx', line: 42 },
+    }) as { elements: unknown[]; count: number };
+    expect(result.count).toBe(1);
+    expect(result.elements).toHaveLength(1);
+  });
+
   it('CAPABILITIES returns the registered capabilities', () => {
     registerCapabilities({
       testids: ['item-list'],

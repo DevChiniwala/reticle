@@ -60,10 +60,12 @@ function queryFromArgs(args: Record<string, unknown>): ElementQuery {
     placeholder: str(args['placeholder']),
     testid: str(args['testid']),
     alt: str(args['alt']),
+    component: str(args['component']),
     scope: str(args['scope']),
     attrs: Array.isArray(args['attrs'])
       ? args['attrs'].filter((a): a is string => typeof a === 'string')
       : undefined,
+    source: args['source'] as ElementQuery['source'],
   };
 }
 
