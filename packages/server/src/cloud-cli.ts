@@ -111,7 +111,14 @@ const api = async (
   if (body !== undefined) init.body = JSON.stringify(body);
   const res = await fetch(url, init);
   const text = await res.text();
-  const json: unknown = text.length > 0 ? JSON.parse(text) : null;
+  let json: unknown = null;
+  if (text.length > 0) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`expected JSON from ${method} ${url} but got: ${text.slice(0, 120)}`);
+    }
+  }
   if (!res.ok) {
     const parsed = z.object({ error: z.object({ message: z.string() }) }).safeParse(json);
     throw new Error(parsed.success ? parsed.data.error.message : `${res.status} ${res.statusText}`);
