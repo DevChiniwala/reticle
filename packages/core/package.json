@@ -11,14 +11,17 @@
       "default": "./dist/index.js"
     },
     "./schema/*.json": "./dist/schema/*.json",
-    "./desktop-contract": "./dist/desktop-contract.cjs"
+    "./desktop-contract": {
+      "types": "./dist/desktop-contract.d.cts",
+      "default": "./dist/desktop-contract.cjs"
+    }
   },
   "scripts": {
     "build": "tsc -b && node scripts/gen-schema.mjs && node scripts/gen-desktop-contract.mjs",
     "typecheck": "tsc -b",
     "lint": "eslint src",
     "test:unit": "vitest run src --passWithNoTests",
-    "prepack": "tsc -b && node scripts/gen-schema.mjs && find dist -name \"*.test.*\" -delete"
+    "prepack": "tsc -b && node scripts/gen-schema.mjs && node scripts/gen-desktop-contract.mjs && find dist -name \"*.test.*\" -delete"
   },
   "dependencies": {
     "zod": "^3.24.1"

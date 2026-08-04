@@ -25,9 +25,9 @@ describe('desktop contract generation', () => {
   it('renders a module a CommonJS preload can actually require', () => {
     const rendered = renderDesktopContract({ EXAMPLE: 'value' });
     expect(rendered).toContain("'use strict'");
-    expect(rendered).toContain('module.exports =');
+    expect(rendered).toContain('exports.EXAMPLE');
     // Frozen so a misbehaving app cannot mutate the contract out from under the SDK.
-    expect(rendered).toContain('Object.freeze');
+    expect(rendered).toContain('Object.freeze(exports)');
   });
 
   it('marks the output as generated so nobody hand-edits it', () => {
