@@ -67,7 +67,7 @@ describe('reclaimStaleDaemons', () => {
   });
 
   it('a live daemon is never reclaimed even if other pidfiles are stale', () => {
-    writePidFile(4400, 999); // dead
+    writePidFile(4400, 2_147_483_647); // PID_MAX on Linux — guaranteed dead
     writePidFile(4401, process.pid); // genuinely alive
     const reclaimed = reclaimStaleDaemons(home); // real isAlive probe
     expect(reclaimed).toEqual([4400]);
