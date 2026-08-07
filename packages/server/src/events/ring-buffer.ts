@@ -1,20 +1,4 @@
-import { EventType, RING_BUFFER_DEFAULTS, type ReticleEvent } from '@reticlehq/core';
-
-/**
- * The high-volume, low-signal floor. These fire continuously on any live page (count-up text, CSS
- * animation frames, React commits, health heartbeats, scroll) and are the ONLY thing that should be
- * sacrificed when the buffer is full. Everything else — a failed request, a console error, a domain
- * signal, a truncation/blind-spot marker — is scarce evidence a verdict depends on, and a churning
- * region must never be able to push it out of the window.
- */
-const CHURN_TYPES: ReadonlySet<string> = new Set<string>([
-  EventType.DOM_TEXT,
-  EventType.ANIM_START,
-  EventType.ANIM_END,
-  EventType.RENDER_COMMIT,
-  EventType.PAGE_HEALTH,
-  EventType.SCROLL_POSITION,
-]);
+import { CHURN_TYPES, RING_BUFFER_DEFAULTS, type ReticleEvent } from '@reticlehq/core';
 
 /** How far forward to look for a churn event to sacrifice before falling back to plain FIFO. */
 const CHURN_SCAN_LIMIT = 256;
