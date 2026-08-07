@@ -11,6 +11,7 @@
 // ── STABLE public surface: the wire/domain contract ──────────────────────────────────────────────
 export * from './constants.js'; // EventType, ActionType, wire constants, TRANSPORT_LIMITS, …
 export * from './source-constants.js'; // DATA_RETICLE_SOURCE_ATTR, RETICLE_ROOT_GLOBAL
+export * from './event-classification.js'; // CHURN_TYPES — shared eviction priority for buffer/queue
 export * from './verified-constants.js'; // Verified — the one field an agent gates on
 export * from './session-constants.js';
 export * from './messages.js'; // ReticleEvent + the message schemas
