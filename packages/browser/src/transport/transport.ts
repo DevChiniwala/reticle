@@ -169,9 +169,7 @@ export class Transport {
       // Declare any gap BEFORE replaying the backlog. The queue evicts its OLDEST entries, so the
       // hole always precedes everything that survived it.
       this.#sendGapMarker(ws, greeting.sessionId);
-      const replay = [...this.#churnQueue, ...this.#signalQueue].sort(
-        (a, b) => a.order - b.order,
-      );
+      const replay = [...this.#churnQueue, ...this.#signalQueue].sort((a, b) => a.order - b.order);
       for (const msg of replay) ws.send(msg.text);
       this.#churnQueue = [];
       this.#signalQueue = [];
