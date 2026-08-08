@@ -926,11 +926,7 @@ describe('waitForPredicate disconnect cleanup', () => {
 
   it('resolves immediately with failure on disconnect, clearing all timers', async () => {
     const session = new DisconnectableSession();
-    const verdict = waitForPredicate(
-      session,
-      { kind: 'signal', name: 'never-fires' },
-      30_000,
-    );
+    const verdict = waitForPredicate(session, { kind: 'signal', name: 'never-fires' }, 30_000);
     await new Promise((r) => setTimeout(r, 0));
     session.disconnect();
     const r = await verdict;
@@ -941,11 +937,7 @@ describe('waitForPredicate disconnect cleanup', () => {
   it('unsubscribes the disconnect listener when the predicate resolves normally', async () => {
     const session = new DisconnectableSession();
     session.pushEvent(ev(EventType.SIGNAL, { name: 'done' }, 1));
-    const verdict = waitForPredicate(
-      session,
-      { kind: 'signal', name: 'done' },
-      30_000,
-    );
+    const verdict = waitForPredicate(session, { kind: 'signal', name: 'done' }, 30_000);
     expect(session.disconnectListenerCount()).toBe(1);
     const r = await verdict;
     expect(r.pass).toBe(true);
