@@ -6,6 +6,8 @@ import {
   reconnectDelayMs,
   RECONNECT_INITIALIZE_ID,
   MAX_RECONNECT_ATTEMPTS,
+  STDIN_QUEUE_CAP,
+  ENDPOINT_TIMEOUT_MS,
 } from './mcp-proxy.js';
 
 /**
@@ -159,5 +161,17 @@ describe('buildSessionUrl', () => {
       'http://127.0.0.1:4460/messages?sessionId=abc',
     );
     expect(buildSessionUrl('http://127.0.0.1:9/x', 4460)).toBe('http://127.0.0.1:9/x');
+  });
+});
+
+describe('proxy safety bounds', () => {
+  it('STDIN_QUEUE_CAP prevents unbounded memory growth while waiting for the endpoint event', () => {
+    expect(STDIN_QUEUE_CAP).toBeGreaterThan(0);
+    expect(STDIN_QUEUE_CAP).toBeLessThanOrEqual(1000);
+  });
+
+  it('ENDPOINT_TIMEOUT_MS gives the daemon a reasonable deadline to send the endpoint event', () => {
+    expect(ENDPOINT_TIMEOUT_MS).toBeGreaterThanOrEqual(1000);
+    expect(ENDPOINT_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
   });
 });

@@ -6,6 +6,15 @@ import { join } from 'node:path';
 import { LOOPBACK_HOST, MCP_SSE_PATH, ReticleDir } from '@reticlehq/core';
 import { log } from './log.js';
 
+/**
+ * Max messages queued while waiting for the SSE endpoint event. Under normal operation 1-2 land here;
+ * a runaway client or a zombie connection accumulating traffic is capped and the excess is logged+dropped.
+ */
+export const STDIN_QUEUE_CAP = 100;
+
+/** How long after an SSE connection is established to wait for the endpoint event before reconnecting. */
+export const ENDPOINT_TIMEOUT_MS = 5_000;
+
 const DEFAULT_DAEMON_READY_TIMEOUT_MS = 10_000;
 /**
  * How long to wait for the spawned daemon's port to accept connections before giving up. The default
@@ -259,9 +268,20 @@ export function startMcpProxy(port: number): Promise<never> {
     let stopped = false;
     let attempts = 0;
 
+    let endpointTimer: ReturnType<typeof setTimeout> | undefined;
+
     function onSseEvent(event: string, data: string, p: number): void {
       if (event === 'endpoint') {
-        const url = buildSessionUrl(data, p);
+        if (endpointTimer !== undefined) {
+          clearTimeout(endpointTimer);
+          endpointTimer = undefined;
+        }
+        const trimmed = data.trim();
+        if (trimmed === '') {
+          proxyLog('reticle_mcp_proxy_empty_endpoint', { port });
+          return;
+        }
+        const url = buildSessionUrl(trimmed, p);
         postUrl = url;
         // The new session's McpServer has never seen the client's initialize — replay it first, then
         // flush whatever the client sent while we were reconnecting.
@@ -277,6 +297,10 @@ export function startMcpProxy(port: number): Promise<never> {
     function scheduleReconnect(reason: string, detail?: string): void {
       if (stopped) return;
       postUrl = null;
+      if (endpointTimer !== undefined) {
+        clearTimeout(endpointTimer);
+        endpointTimer = undefined;
+      }
       attempts++;
       if (attempts > MAX_RECONNECT_ATTEMPTS) {
         proxyLog('reticle_mcp_proxy_gave_up', {
@@ -299,6 +323,12 @@ export function startMcpProxy(port: number): Promise<never> {
     }
 
     function connect(first: boolean): void {
+      endpointTimer = setTimeout(() => {
+        proxyLog('reticle_mcp_proxy_endpoint_timeout', { port, timeoutMs: ENDPOINT_TIMEOUT_MS });
+        scheduleReconnect('endpoint_timeout');
+      }, ENDPOINT_TIMEOUT_MS);
+      endpointTimer.unref();
+
       const req = http.get({ host: LOOPBACK_HOST, port, path: MCP_SSE_PATH }, (res) => {
         attempts = 0; // a stream we actually established resets the budget
         if (!first) proxyLog('reticle_mcp_proxy_reconnected', { port });
@@ -308,6 +338,10 @@ export function startMcpProxy(port: number): Promise<never> {
         const drop = (reason: string, detail?: string): void => {
           if (settled) return;
           settled = true;
+          if (endpointTimer !== undefined) {
+            clearTimeout(endpointTimer);
+            endpointTimer = undefined;
+          }
           scheduleReconnect(reason, detail);
         };
         const sse = new SseFrameParser();
@@ -343,6 +377,13 @@ export function startMcpProxy(port: number): Promise<never> {
         if (trimmed === '') continue;
         replay.observeOutbound(trimmed);
         if (postUrl === null) {
+          if (stdinQueue.length >= STDIN_QUEUE_CAP) {
+            proxyLog('reticle_mcp_proxy_stdin_queue_overflow', {
+              port,
+              dropped: stdinQueue.length - STDIN_QUEUE_CAP + 1,
+            });
+            stdinQueue.shift();
+          }
           stdinQueue.push(trimmed);
         } else {
           void postToSession(postUrl, trimmed);
