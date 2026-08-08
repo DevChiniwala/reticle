@@ -3,6 +3,7 @@
  * Uses a fake launcher so no real Chromium is needed — the pool logic is what's under test.
  */
 
+import { getEventListeners } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BrowserPool,
@@ -333,6 +334,35 @@ describe('BrowserPool', () => {
     const fresh = await pool.acquire('http://localhost:3000/fresh');
     expect(fresh.sessionId).toBeDefined();
     expect(pool.activeCount()).toBe(1);
+  });
+
+  it('removes the abort handler from the signal after a successful acquire', async () => {
+    const { launch } = fakeLauncher();
+    const pool = new BrowserPool(launch, { maxContexts: 1, genSessionId: counterIds() });
+    const held = await pool.acquire('http://localhost:3000/held');
+
+    const controller = new AbortController();
+    const queued = pool.acquire('http://localhost:3000/queued', { signal: controller.signal });
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+
+    await held.release();
+    const lease = await queued;
+    expect(lease.sessionId).toBeDefined();
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('removes the abort handler when the pool shuts down while waiting', async () => {
+    const { launch } = fakeLauncher();
+    const pool = new BrowserPool(launch, { maxContexts: 1, genSessionId: counterIds() });
+    await pool.acquire('http://localhost:3000/held');
+
+    const controller = new AbortController();
+    const queued = pool.acquire('http://localhost:3000/queued', { signal: controller.signal });
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+
+    await pool.shutdown();
+    await expect(queued).rejects.toThrow(/shut down/);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
   it('a single page crash reclaims ONLY that lease; the fleet survives', async () => {
