@@ -885,6 +885,74 @@ describe('net count is exact, not "at least" — the double-submit must not pass
   });
 });
 
+describe('waitForPredicate disconnect cleanup', () => {
+  class DisconnectableSession implements PredicateSession {
+    readonly #events: ReticleEvent[] = [];
+    readonly #listeners = new Set<(event: ReticleEvent) => void>();
+    readonly #disconnectListeners = new Set<() => void>();
+    elapsed(): number {
+      return 0;
+    }
+    command(): Promise<CommandResult> {
+      return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+    }
+    eventsSince(): ReticleEvent[] {
+      return this.#events;
+    }
+    onEvent(listener: (event: ReticleEvent) => void): () => void {
+      this.#listeners.add(listener);
+      return () => {
+        this.#listeners.delete(listener);
+      };
+    }
+    onDisconnect(listener: () => void): () => void {
+      this.#disconnectListeners.add(listener);
+      return () => {
+        this.#disconnectListeners.delete(listener);
+      };
+    }
+    pushEvent(event: ReticleEvent): void {
+      this.#events.push(event);
+      for (const l of this.#listeners) l(event);
+    }
+    disconnect(): void {
+      for (const l of this.#disconnectListeners) l();
+      this.#disconnectListeners.clear();
+    }
+    disconnectListenerCount(): number {
+      return this.#disconnectListeners.size;
+    }
+  }
+
+  it('resolves immediately with failure on disconnect, clearing all timers', async () => {
+    const session = new DisconnectableSession();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'signal', name: 'never-fires' },
+      30_000,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    session.disconnect();
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(r.failureReason).toBe('session disconnected');
+  });
+
+  it('unsubscribes the disconnect listener when the predicate resolves normally', async () => {
+    const session = new DisconnectableSession();
+    session.pushEvent(ev(EventType.SIGNAL, { name: 'done' }, 1));
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'signal', name: 'done' },
+      30_000,
+    );
+    expect(session.disconnectListenerCount()).toBe(1);
+    const r = await verdict;
+    expect(r.pass).toBe(true);
+    expect(session.disconnectListenerCount()).toBe(0);
+  });
+});
+
 describe('waitForPredicate coalescing', () => {
   it('a burst of events triggers at most one trailing re-check, not one per event', async () => {
     const session = new CoalesceSession();

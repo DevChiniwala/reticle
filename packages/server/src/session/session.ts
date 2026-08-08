@@ -55,10 +55,7 @@ const ACTION_ID_PREFIX = 'a';
 /** ws readyState for an OPEN socket — guard fire-and-forget pushes against a closing tab. */
 const WS_OPEN = 1;
 
-/**
- * One connected browser tab. Owns its socket, a ring buffer of observations, and the
- * in-flight command map. `clock` is injected so elapsed-time logic stays testable.
- */
+/** One connected browser tab. Owns its socket, ring buffer, and in-flight command map. */
 export class Session {
   readonly id: string;
   /** Stable build-stamped project identity; undefined for v1.0 SDKs that omit it. */
@@ -80,6 +77,7 @@ export class Session {
   readonly #buffer = new RingBuffer();
   readonly #pending = new PendingCommands();
   readonly #listeners = new Set<(event: ReticleEvent) => void>();
+  readonly #disconnectListeners = new Set<() => void>();
   #actionSeq = 0;
   #lastSeenAt: number;
   #hidden = false;
@@ -402,6 +400,11 @@ export class Session {
     return () => this.#listeners.delete(listener);
   }
 
+  onDisconnect(listener: () => void): () => void {
+    this.#disconnectListeners.add(listener);
+    return () => this.#disconnectListeners.delete(listener);
+  }
+
   /** Send a command to the browser and await its reply (or time out). */
   command(
     name: string,
@@ -446,6 +449,8 @@ export class Session {
   /** Reject everything still in flight — used on disconnect. */
   rejectAll(reason: string): void {
     this.#pending.rejectAll(reason);
+    for (const listener of this.#disconnectListeners) listener();
+    this.#disconnectListeners.clear();
   }
 
   /** End this transport without letting a stale socket remove its replacement session. */
@@ -591,9 +596,4 @@ export class Session {
   }
 }
 
-/**
- * Re-exported from session-manager.ts so the public import path (`./session.js`) is unchanged for
- * the many call sites that resolve a target session. The class lives in its own file to keep both
- * units under the file-size cap.
- */
 export { SessionManager } from './session-manager.js';
