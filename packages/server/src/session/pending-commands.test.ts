@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { PendingCommands } from './pending-commands.js';
 
-const result = (id: string, ok = true, data?: unknown): {
-  kind: 'command_result'; id: string; ok: boolean; result?: unknown;
+const result = (
+  id: string,
+  ok = true,
+  data?: unknown,
+): {
+  kind: 'command_result';
+  id: string;
+  ok: boolean;
+  result?: unknown;
 } => ({ kind: 'command_result', id, ok, ...(data !== undefined ? { result: data } : {}) });
 
 describe('PendingCommands', () => {
