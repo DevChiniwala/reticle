@@ -58,7 +58,9 @@ function capabilitiesStep(input: PlanInput): Step[] {
   const testids = input.testids ?? [];
   const stores = input.storeHints ?? [];
   const found =
-    testids.length > 0 ? `${String(testids.length)} data-testid values` : 'no data-testid values yet';
+    testids.length > 0
+      ? `${String(testids.length)} data-testid values`
+      : 'no data-testid values yet';
   return [
     {
       title: CAPABILITIES_TITLE,

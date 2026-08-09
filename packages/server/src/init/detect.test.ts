@@ -149,11 +149,15 @@ describe('detect — UI library', () => {
 describe('detect — Astro', () => {
   it('is recognised from the dependency or the config, before the generic Vite branch', () => {
     expect(
-      detect({ pkg: { dependencies: { astro: '^7' } }, configFiles: new Set(), lockfiles: new Set() })
-        .framework,
+      detect({
+        pkg: { dependencies: { astro: '^7' } },
+        configFiles: new Set(),
+        lockfiles: new Set(),
+      }).framework,
     ).toBe(Framework.ASTRO);
     expect(
-      detect({ pkg: {}, configFiles: new Set(['astro.config.mjs']), lockfiles: new Set() }).framework,
+      detect({ pkg: {}, configFiles: new Set(['astro.config.mjs']), lockfiles: new Set() })
+        .framework,
     ).toBe(Framework.ASTRO);
   });
 
@@ -184,7 +188,9 @@ describe('detect package manager — from an installed tree', () => {
   });
 
   it('reads the manager that built node_modules when no lockfile is committed', () => {
-    expect(detect(withMarkers(new Set(['.modules.yaml']))).packageManager).toBe(PackageManager.PNPM);
+    expect(detect(withMarkers(new Set(['.modules.yaml']))).packageManager).toBe(
+      PackageManager.PNPM,
+    );
     expect(detect(withMarkers(new Set(['.yarn-state.yml']))).packageManager).toBe(
       PackageManager.YARN,
     );

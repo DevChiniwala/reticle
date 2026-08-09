@@ -37,7 +37,10 @@ export function scanTestids(sources: readonly string[]): string[] {
  */
 const STORE_LIBRARIES: readonly (readonly [dep: string, hint: string])[] = [
   ['@tanstack/react-query', "registerStore('queries', tanstackQueryStore(queryClient))"],
-  ['zustand', "registerStore('app', useStore) // pass the store itself, not () => store.getState()"],
+  [
+    'zustand',
+    "registerStore('app', useStore) // pass the store itself, not () => store.getState()",
+  ],
   ['@reduxjs/toolkit', "registerStore('app', store)"],
   ['redux', "registerStore('app', store)"],
   ['jotai', "registerStore('app', jotaiStore(getDefaultStore(), { cart, user }))"],

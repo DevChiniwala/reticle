@@ -286,7 +286,10 @@ describe('buildSuiteVerdict — a flow that cannot fail is not a pass', () => {
   it('a real failure still outranks it — a broken flow is worse news than an empty one', () => {
     const v = buildSuiteVerdict([
       { replay: okReplay('empty'), flow: emptyFlow('empty') },
-      { replay: { name: 'broken', status: ReplayStatus.ERROR, steps: [] }, flow: assertingFlow('broken') },
+      {
+        replay: { name: 'broken', status: ReplayStatus.ERROR, steps: [] },
+        flow: assertingFlow('broken'),
+      },
     ]);
     expect(v.status).toBe('fail');
     expect(v.failed).toBe(1);

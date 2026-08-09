@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readJournalEnabled, readProjectId, readProjectPort, resolvePort, isLikelyDevServerPort, devServerPortWarning } from './cli-port.js';
+import {
+  readJournalEnabled,
+  readProjectId,
+  readProjectPort,
+  resolvePort,
+  isLikelyDevServerPort,
+  devServerPortWarning,
+} from './cli-port.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 
 describe('readJournalEnabled', () => {
