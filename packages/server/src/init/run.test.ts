@@ -387,7 +387,10 @@ describe('runInit — the capabilities module', () => {
 
   it('is created on a RE-RUN too — it used to ride on the config patch and vanish when that was already done', () => {
     const io = memoryIo(
-      { ...APP, 'vite.config.ts': `import { reticle } from '@reticlehq/vite-plugin';\nexport default { plugins: [reticle()] };\n` },
+      {
+        ...APP,
+        'vite.config.ts': `import { reticle } from '@reticlehq/vite-plugin';\nexport default { plugins: [reticle()] };\n`,
+      },
       { mcpExists: true },
     );
     runInit(OPTS, io);
@@ -401,10 +404,7 @@ describe('runInit — the capabilities module', () => {
   });
 
   it('still writes the module when an app has no testids yet, and says so', () => {
-    const io = memoryIo(
-      { ...APP, 'src/App.tsx': '<button>Pay</button>' },
-      { mcpExists: true },
-    );
+    const io = memoryIo({ ...APP, 'src/App.tsx': '<button>Pay</button>' }, { mcpExists: true });
     runInit(OPTS, io);
     const mod = io.written['src/reticle-dev.ts'] ?? '';
     expect(mod).toContain('registerCapabilities');

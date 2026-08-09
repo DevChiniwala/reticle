@@ -109,11 +109,11 @@ export function patchPagesApp(
 
   const matches = [...source.matchAll(PAGES_APP_COMPONENT)];
   const match = matches.length === 1 ? matches[0] : undefined;
-  if (match?.index === undefined) return { kind: PatchKind.MANUAL, reason: NO_PAGES_COMPONENT_REASON };
+  if (match?.index === undefined)
+    return { kind: PatchKind.MANUAL, reason: NO_PAGES_COMPONENT_REASON };
 
   const wrapped = `<>${RETICLE_DEV_MOUNT}${match[0]}</>`;
-  const code =
-    source.slice(0, match.index) + wrapped + source.slice(match.index + match[0].length);
+  const code = source.slice(0, match.index) + wrapped + source.slice(match.index + match[0].length);
   return { kind: PatchKind.APPLY, code: `${reticleDevImport(importSpecifier)}\n${code}` };
 }
 

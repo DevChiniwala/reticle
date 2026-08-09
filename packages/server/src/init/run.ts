@@ -219,8 +219,8 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkgRaw: string): Plan
   const nextConfigFile = firstPresent(rootFiles, NEXT_CONFIG_CANDIDATES);
   // App Router first; a Pages Router app has no layout, and its mount point is pages/_app.
   const layoutPath =
-    (NEXT_LAYOUT_CANDIDATES.find((p) => io.exists(p)) ??
-      NEXT_PAGES_APP_CANDIDATES.find((p) => io.exists(p))) ??
+    NEXT_LAYOUT_CANDIDATES.find((p) => io.exists(p)) ??
+    NEXT_PAGES_APP_CANDIDATES.find((p) => io.exists(p)) ??
     null;
   const layoutSource = layoutPath === null ? null : io.readFile(layoutPath);
   // Where the component goes depends on WHICH router mounts it: `pages/` routes on presence, so a
