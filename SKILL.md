@@ -30,7 +30,7 @@ If you genuinely cannot determine something, pick the sensible default, say whic
 
 **Never ask about the port.** There are two different ports and conflating them is the single most common setup failure:
 
-| | What it is | Who owns it |
+|  | What it is | Who owns it |
 | --- | --- | --- |
 | Dev-server port (3000, 5173, 4321, …) | where the app is served | the user's `npm run dev` — Reticle never touches it |
 | Bridge port (**4400**) | the daemon ↔ SDK channel | Reticle, and it defaults correctly |
@@ -41,12 +41,12 @@ Reticle **attaches** to whatever is already running; it never starts or manages 
 
 Then read the report. Each line is marked:
 
-| Mark | Meaning | What you do |
-| --- | --- | --- |
-| `✓` | applied | nothing |
-| `·` | already wired | nothing |
-| `–` | skipped by a flag | nothing |
-| `⚠` | needs a human/agent edit | **only these** — the line carries the exact snippet |
+| Mark | Meaning                  | What you do                                         |
+| ---- | ------------------------ | --------------------------------------------------- |
+| `✓`  | applied                  | nothing                                             |
+| `·`  | already wired            | nothing                                             |
+| `–`  | skipped by a flag        | nothing                                             |
+| `⚠`  | needs a human/agent edit | **only these** — the line carries the exact snippet |
 
 **If every line is `✓`, `·` or `–`, skip to Step 4 and validate.** The manual sections below exist for the `⚠` lines only.
 
@@ -326,7 +326,7 @@ import { withReticle } from '@reticlehq/next';
 export default withReticle(nextConfig);
 ```
 
-It configures **both** Turbopack and webpack, so it is correct on Next 16 (Turbopack by default) and on Next 15 and earlier. If you are on `@reticlehq/next` older than 2.3.1, `next dev` on Next 16 dies with *"This build is using Turbopack, with a webpack config and no turbopack config"* — upgrade rather than dropping `withReticle`.
+It configures **both** Turbopack and webpack, so it is correct on Next 16 (Turbopack by default) and on Next 15 and earlier. If you are on `@reticlehq/next` older than 2.3.1, `next dev` on Next 16 dies with _"This build is using Turbopack, with a webpack config and no turbopack config"_ — upgrade rather than dropping `withReticle`.
 
 **Other frameworks** — call `reticle.connect()` and `install()` inside a dev guard. Vanilla / HTML: use a dynamic `import('@reticlehq/react')` inside `if (location.hostname === 'localhost')`.
 
@@ -383,21 +383,13 @@ Most no-connect cases are one of these. Fastest signal first:
 
 ## Step 5 — Prove it on ONE flow, while the user watches
 
-**Do not stop at "connected".** A connected session is not a result; the user has installed something
-and seen nothing happen. Drive one flow now, in front of them. This is the whole first impression.
+**Do not stop at "connected".** A connected session is not a result; the user has installed something and seen nothing happen. Drive one flow now, in front of them. This is the whole first impression.
 
-**One flow. Not the app.** The person installing this has an existing project with dozens of flows. An
-agent that tries to instrument all of them spends ten minutes producing nothing to look at. Pick the
-single most important flow that completes in a handful of steps — the one a user would do first — say
-which one you picked in a line, and drive only that.
+**One flow. Not the app.** The person installing this has an existing project with dozens of flows. An agent that tries to instrument all of them spends ten minutes producing nothing to look at. Pick the single most important flow that completes in a handful of steps — the one a user would do first — say which one you picked in a line, and drive only that.
 
-**You do not need to add `data-testid` anywhere to do this.** `reticle_snapshot` addresses elements by
-role and name, and it works on an app that has never heard of Reticle. Adding testids is an
-optimisation for flows you will replay often — it is not a prerequisite, and treating it as one is
-what turns a two-minute setup into an afternoon.
+**You do not need to add `data-testid` anywhere to do this.** `reticle_snapshot` addresses elements by role and name, and it works on an app that has never heard of Reticle. Adding testids is an optimisation for flows you will replay often — it is not a prerequisite, and treating it as one is what turns a two-minute setup into an afternoon.
 
-1. Tell the user: **"Keep the tab visible — you'll see this happen."** The HUD is on by default: a glow
-   border, a moving cursor, and a narration line per step.
+1. Tell the user: **"Keep the tab visible — you'll see this happen."** The HUD is on by default: a glow border, a moving cursor, and a narration line per step.
 2. `reticle_snapshot` → find the elements the flow needs.
 3. Walk it with `reticle_act_and_wait`, narrating each step before you take it.
 4. `reticle_assert` after each step — that the effect happened, not just that the click dispatched.
@@ -407,8 +399,7 @@ Then report what you drove and what it produced, with `file:line` for anything b
 
 **Only after that flow has run**, tell the user:
 
-> "Reticle is set up, and you just watched it drive <flow>. Type `/reticle` any time to verify a flow
-> after a change — `init` created that command in this project."
+> "Reticle is set up, and you just watched it drive <flow>. Type `/reticle` any time to verify a flow after a change — `init` created that command in this project."
 
 **Setup complete — stop here. Do not proceed to Test mode.**
 

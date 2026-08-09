@@ -40,7 +40,12 @@ import { runInit } from './init/run.js';
 import { handleDoctor } from './cli-doctor.js';
 import { buildNodeIo } from './init/node-io.js';
 import { describeLicense } from './license/license.js';
-import { isLikelyDevServerPort, devServerPortWarning, readProjectPort, readProjectId } from './cli-port.js';
+import {
+  isLikelyDevServerPort,
+  devServerPortWarning,
+  readProjectPort,
+  readProjectId,
+} from './cli-port.js';
 import type { StartOptions } from './index.js';
 
 import {

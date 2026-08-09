@@ -449,7 +449,10 @@ describe('buildPlan — Astro', () => {
   });
 
   it('installs the kit but no bundler plugin — Astro owns its own Vite', () => {
-    const s = step(buildPlan(input({ detection: detection(Framework.ASTRO, 19) })), 'Install dependencies');
+    const s = step(
+      buildPlan(input({ detection: detection(Framework.ASTRO, 19) })),
+      'Install dependencies',
+    );
     expect(s.detail).toContain('@reticlehq/react');
     expect(s.detail).not.toContain('@reticlehq/vite-plugin');
   });
@@ -503,7 +506,11 @@ describe('the generated Next component is valid JavaScript', () => {
         detection: detection(Framework.NEXT),
         nextConfigFile: 'next.config.js',
         nextConfigSource: 'module.exports = {};\n',
-        nextLayout: { path: 'pages/_app.js', source: 'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n' },
+        nextLayout: {
+          path: 'pages/_app.js',
+          source:
+            'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n',
+        },
         nextReticleDevPath: 'components/reticle-dev.jsx',
       }),
     );
@@ -512,8 +519,12 @@ describe('the generated Next component is valid JavaScript', () => {
 
   it('contains no TypeScript-only syntax', () => {
     const src = body();
-    expect(src, 'an `as` cast does not parse as JavaScript').not.toMatch(/\bas\s+(Record|any|unknown|string)\b/);
-    expect(src, 'a type annotation does not parse as JavaScript').not.toMatch(/:\s*Record<|:\s*string\b|<[A-Z]\w*>/);
+    expect(src, 'an `as` cast does not parse as JavaScript').not.toMatch(
+      /\bas\s+(Record|any|unknown|string)\b/,
+    );
+    expect(src, 'a type annotation does not parse as JavaScript').not.toMatch(
+      /:\s*Record<|:\s*string\b|<[A-Z]\w*>/,
+    );
   });
 
   it('carries the capabilities scaffold too — only the Vite path used to get one', () => {

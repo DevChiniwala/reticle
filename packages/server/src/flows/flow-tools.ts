@@ -396,7 +396,8 @@ export const FLOW_TOOLS: ToolDef[] = [
         const parallelRuns = await Promise.all(
           outcomes.map(async (o, i) => {
             const name = requested[i] ?? '';
-            const replay = o.ok && o.value !== undefined ? o.value : leaseFailureReplay(name, o.error);
+            const replay =
+              o.ok && o.value !== undefined ? o.value : leaseFailureReplay(name, o.error);
             const loaded = await deps.flows.load(name, projectId).catch(() => null);
             const flow = loaded !== null && loaded.ok ? loaded.value : undefined;
             return flow === undefined ? { replay } : { replay, flow };
