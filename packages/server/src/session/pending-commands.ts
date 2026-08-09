@@ -34,6 +34,7 @@ export class PendingCommands {
         this.#pending.delete(id);
         reject(new Error(describeTimeout()));
       }, timeoutMs);
+      timer.unref();
       this.#pending.set(id, { resolve, reject, timer });
     });
   }
