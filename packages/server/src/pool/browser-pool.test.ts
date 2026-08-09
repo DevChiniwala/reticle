@@ -390,4 +390,30 @@ describe('BrowserPool', () => {
     const ok = await pool.acquire('http://localhost:3000/ok');
     expect(ok.sessionId).toBeDefined();
   });
+
+  it('shutdown closes a browser whose launch was in-flight (no orphaned Chromium)', async () => {
+    let resolveDelayed: ((b: FakeBrowser) => void) | undefined;
+    const browsers: FakeBrowser[] = [];
+    const launch: Launcher = () =>
+      new Promise<PooledBrowser>((resolve) => {
+        const b = new FakeBrowser();
+        browsers.push(b);
+        resolveDelayed = resolve;
+      });
+    const pool = new BrowserPool(launch, { maxContexts: 2, genSessionId: counterIds() });
+
+    const acquiring = pool.acquire('http://localhost:3000/slow');
+    await Promise.resolve(); // the launch is now in flight
+
+    const shutdownDone = pool.shutdown();
+    expect(resolveDelayed).toBeDefined();
+
+    // The launch completes AFTER shutdown was called.
+    resolveDelayed?.(browsers[0] as FakeBrowser);
+    await shutdownDone;
+
+    // The browser that resolved after shutdown must have been closed.
+    expect(browsers[0]?.isConnected()).toBe(false);
+    await expect(acquiring).rejects.toThrow();
+  });
 });

@@ -202,6 +202,15 @@ export class BrowserPool {
     this.#active.clear();
     this.#occupied = 0;
     await Promise.all(contexts.map((c) => c.close().catch(() => undefined)));
+    // If a launch is in flight, await it so we can close the resulting browser — otherwise it
+    // resolves after shutdown returns and the Chromium process is orphaned (hundreds of MB leaked).
+    const inflight = this.#launching;
+    if (inflight !== undefined) {
+      const launched = await inflight.catch(() => undefined);
+      if (launched !== undefined && launched !== this.#browser) {
+        await launched.close().catch(() => undefined);
+      }
+    }
     const browser = this.#browser;
     this.#browser = undefined;
     if (browser !== undefined) await browser.close().catch(() => undefined);
