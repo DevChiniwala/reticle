@@ -325,7 +325,9 @@ export function startMcpProxy(port: number): Promise<never> {
 
       // The very first connect failing means there is no daemon to talk to — that is a startup
       // failure the caller handles. Later ones are just the daemon bouncing: keep retrying.
-      req.on('error', (err) => (first ? reject(err) : scheduleReconnect('connect_error', err.message)));
+      req.on('error', (err) =>
+        first ? reject(err) : scheduleReconnect('connect_error', err.message),
+      );
     }
 
     connect(true);

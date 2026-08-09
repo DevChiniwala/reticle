@@ -212,7 +212,9 @@ describe('source paths are repo-relative when the build plugin supplies a root',
   });
 
   it('leaves the path alone when no root is defined — a guess would be worse', () => {
-    expect(identify(elementAt('/repo/app/src/Pay.tsx'))?.source?.file).toBe('/repo/app/src/Pay.tsx');
+    expect(identify(elementAt('/repo/app/src/Pay.tsx'))?.source?.file).toBe(
+      '/repo/app/src/Pay.tsx',
+    );
   });
 
   it('leaves a path that is not under the root alone (linked package, monorepo sibling)', () => {
