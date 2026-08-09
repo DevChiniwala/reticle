@@ -13,7 +13,6 @@ const path = require('node:path');
 const PAIRING_TOKEN_DIR_ENV = 'RETICLE_PAIRING_TOKEN_DIR';
 const PAIRING_TOKEN_FILE = 'pairing-token';
 
-
 /**
  * Read the daemon's auto-provisioned pairing token (~/.reticle/pairing-token, or the
  * RETICLE_PAIRING_TOKEN_DIR override). Node-side only. Returns undefined if the daemon hasn't started
@@ -49,7 +48,9 @@ const LOADER_MODULE = '@reticlehq/next/loader';
 function supportsTurbopackKey() {
   try {
     const { version } = require('next/package.json');
-    const [major, minor] = String(version).split('.').map((n) => parseInt(n, 10));
+    const [major, minor] = String(version)
+      .split('.')
+      .map((n) => parseInt(n, 10));
     if (!Number.isFinite(major)) return true; // unreadable version: assume modern, matching npm's default
     if (major > 15) return true;
     return major === 15 && Number.isFinite(minor) && minor >= 3;

@@ -140,8 +140,12 @@ describe('HandshakeReplay — surviving a dropped SSE stream', () => {
   it('keeps the FIRST initialize when the client sends another (the session identity is the first)', () => {
     const r = new HandshakeReplay();
     r.observeOutbound(INIT);
-    r.observeOutbound('{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"protocolVersion":"y"}}');
-    expect(JSON.parse(r.replayLines()[0] ?? '')).toMatchObject({ params: { protocolVersion: 'x' } });
+    r.observeOutbound(
+      '{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"protocolVersion":"y"}}',
+    );
+    expect(JSON.parse(r.replayLines()[0] ?? '')).toMatchObject({
+      params: { protocolVersion: 'x' },
+    });
   });
 });
 

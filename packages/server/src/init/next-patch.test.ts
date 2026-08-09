@@ -74,7 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (r.kind !== PatchKind.APPLY) return;
     expect(r.code).toContain("import { ReticleDev } from './reticle-dev';");
     expect(r.code).toContain(
-      "<body className=\"x\">{process.env.NODE_ENV === 'development' ? <ReticleDev /> : null}{children}</body>",
+      '<body className="x">{process.env.NODE_ENV === \'development\' ? <ReticleDev /> : null}{children}</body>',
     );
   });
 
@@ -97,7 +97,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
    * directory that does not exist and the app connected to nothing, silently.
    */
   it('imports the component from wherever it was written, not a fixed sibling path', () => {
-    const APP = 'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n';
+    const APP =
+      'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n';
     const r = patchPagesApp(APP, '../components/reticle-dev');
     if (r.kind !== PatchKind.APPLY) throw new Error('expected apply');
     expect(r.code).toContain("import { ReticleDev } from '../components/reticle-dev';");
@@ -119,7 +120,8 @@ export default function App({ Component, pageProps }: AppProps) {
   });
 
   it('pages/_app patch is idempotent and bails when there is no <Component .../>', () => {
-    const APP = 'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n';
+    const APP =
+      'export default function App({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n';
     const once = patchPagesApp(APP);
     if (once.kind !== PatchKind.APPLY) throw new Error('expected apply');
     expect(patchPagesApp(once.code).kind).toBe(PatchKind.ALREADY);

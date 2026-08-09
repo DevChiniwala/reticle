@@ -14,11 +14,7 @@ import {
 } from './detect.js';
 import { claudeAddCommand, mcpManual } from './mcp.js';
 import { mergeCursorConfig, CursorMergeStatus, cursorServerEntry } from './cursor.js';
-import {
-  CLAUDE_COMMAND_PATH,
-  CURSOR_COMMAND_PATH,
-  SLASH_COMMAND_BODY,
-} from './slash-command.js';
+import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH, SLASH_COMMAND_BODY } from './slash-command.js';
 import {
   mergeMarkedInstruction,
   cursorRuleFile,
@@ -266,7 +262,11 @@ const SLASH_COMMAND_TITLE = 'The /reticle command';
  */
 function slashCommandSteps(input: PlanInput): Step[] {
   const targets: { path: string; when: boolean; exists: boolean }[] = [
-    { path: CLAUDE_COMMAND_PATH, when: input.claudeCli, exists: input.claudeCommandExists === true },
+    {
+      path: CLAUDE_COMMAND_PATH,
+      when: input.claudeCli,
+      exists: input.claudeCommandExists === true,
+    },
     {
       path: CURSOR_COMMAND_PATH,
       when: input.cursorProjectPresent === true || (input.cursorPresent && !input.claudeCli),

@@ -107,8 +107,12 @@ ${storeBlock}
  * raised or Astro down-levels the modern SDK bundle and dies on a destructuring transform.
  */
 export function astroManual(port: number | undefined, projectId?: string): string {
-  const extra = port !== undefined && port !== RETICLE_DEFAULT_PORT ? `\n          url: '${bridgeWsUrl(port)}',` : '';
-  const id = projectId !== undefined && projectId.length > 0 ? `\n          projectId: '${projectId}',` : '';
+  const extra =
+    port !== undefined && port !== RETICLE_DEFAULT_PORT
+      ? `\n          url: '${bridgeWsUrl(port)}',`
+      : '';
+  const id =
+    projectId !== undefined && projectId.length > 0 ? `\n          projectId: '${projectId}',` : '';
   return `Astro renders its own HTML, so the connect goes in a page <script> and the pairing token is inlined by the config.
 
 1. In astro.config.mjs — inline the daemon's token and raise the build target:

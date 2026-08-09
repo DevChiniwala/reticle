@@ -1,9 +1,4 @@
-/**
- * Pure CLI argument parsing — the command/flag grammar, the CliResult union, and parseCliArgs.
- * Split out of cli.ts (which keeps the side-effecting handlers + dispatch) to stay under the
- * file-size cap and keep the parser pure + unit-testable. Re-exported from cli.ts so existing
- * imports are unchanged.
- */
+/** Pure CLI argument parsing — split from cli.ts for the file-size cap. Re-exported from cli.ts. */
 
 export const CLI_USAGE = `usage:
   reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install]  (wire Reticle into the project in this directory)
@@ -215,7 +210,11 @@ type ServeFlags =
  * them headed changed timing enough to break four e2e specs. The headed default belongs to the
  * INTERACTIVE command (`drive`), where a human asked to see the run. `--headed` still opts in here.
  */
-function parseServeFlags(args: string[], defaultPort: number, _defaultHeadless: boolean): ServeFlags {
+function parseServeFlags(
+  args: string[],
+  defaultPort: number,
+  _defaultHeadless: boolean,
+): ServeFlags {
   let port = defaultPort;
   let driveUrl: string | undefined;
   let headless = true;
