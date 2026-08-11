@@ -433,7 +433,15 @@ export const FLOW_TOOLS: ToolDef[] = [
             return flow === undefined ? { replay } : { replay, flow };
           }),
         );
-        return buildSuiteVerdict(parallelRuns);
+        const flakes = new FlakeStore(deps.fs, deps.reticleRoot);
+        for (const { replay } of parallelRuns) {
+          await flakes
+            .record(replay.name, replay.status === ReplayStatus.OK)
+            .catch(() => undefined);
+        }
+        const flaky = await flakes.flakyFlows().catch(() => [] as string[]);
+        const verdict = buildSuiteVerdict(parallelRuns);
+        return flaky.length > 0 ? { ...verdict, flaky } : verdict;
       }
       // The flow FILE travels with each replay so the verdict can tell a green that verified
       // something from a green that could never have gone red. Without it the suite reported "all 1
