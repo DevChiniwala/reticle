@@ -411,15 +411,17 @@ export const FLOW_TOOLS: ToolDef[] = [
       ) {
         const concurrency = resolveConcurrency(requested.length, pool.capacity(), parallelArg);
         const outcomes = await mapWithConcurrency(requested, concurrency, async (flowName) => {
+          const start = deps.now();
           const lease = await acquireLeasedSession(
             pool,
             (id) => deps.sessions.get(id) !== undefined,
             appUrl,
+            projectId,
           );
           try {
-            return await replayNamedFlow(deps, { flowName, sessionId: lease.sessionId });
+            const replay = await replayNamedFlow(deps, { flowName, sessionId: lease.sessionId });
+            return { replay, durationMs: deps.now() - start };
           } finally {
-            // Always release: a crashed flow must never leak a slot and starve the rest of the suite.
             await lease.release().catch(() => undefined);
           }
         });
@@ -427,13 +429,21 @@ export const FLOW_TOOLS: ToolDef[] = [
           outcomes.map(async (o, i) => {
             const name = requested[i] ?? '';
             const replay =
-              o.ok && o.value !== undefined ? o.value : leaseFailureReplay(name, o.error);
+              o.ok && o.value !== undefined ? o.value.replay : leaseFailureReplay(name, o.error);
             const loaded = await deps.flows.load(name, projectId).catch(() => null);
             const flow = loaded !== null && loaded.ok ? loaded.value : undefined;
             return flow === undefined ? { replay } : { replay, flow };
           }),
         );
+        const timed: TimedReplay[] = outcomes.map((o, i) => ({
+          replay:
+            o.ok && o.value !== undefined
+              ? o.value.replay
+              : leaseFailureReplay(requested[i] ?? '', o.error),
+          durationMs: o.ok && o.value !== undefined ? o.value.durationMs : 0,
+        }));
         const flaky = await recordSuiteFlakes(deps.fs, deps.reticleRoot, parallelRuns);
+        await persistAndSyncVerificationRun(deps, timed, projectId);
         const verdict = buildSuiteVerdict(parallelRuns);
         return flaky.length > 0 ? { ...verdict, flaky: [...flaky] } : verdict;
       }
