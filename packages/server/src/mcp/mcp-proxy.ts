@@ -554,6 +554,7 @@ export function startMcpProxy(
         for (const line of replay.replayLines()) forward(url, line);
         clearQueueTimer();
         for (const queued of stdinQueue.splice(0)) forward(url, queued);
+        handshakeAnswered = true;
         return;
       }
       if ('message' === event && !replay.shouldSuppressInbound(data)) {
@@ -627,8 +628,10 @@ export function startMcpProxy(
         const drop = (reason: string, detail?: string): void => {
           if (settled) return;
           settled = true;
-          // Answer anything the dead session owed BEFORE reconnecting. The new session cannot know
-          // about it, so silence here is permanent.
+          // Drain the queue BEFORE answering pending: a request can be in both (queued but tracked),
+          // and leaving it in the queue means the reconnect will forward it, the daemon will answer,
+          // and the client sees two responses for one id — a protocol violation.
+          stdinQueue.splice(0);
           const lost = streamLossReplies(pending, reason);
           for (const reply of lost) emit(reply);
           // How many calls this drop actually killed. Zero means the agent could not feel it.
