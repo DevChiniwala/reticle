@@ -12,7 +12,7 @@ import { replayProgram } from '../flows/replay.js';
 import { diffLines } from '../project/baselines.js';
 import { selectPath, capDepth, projectComponentState } from '../session/state-select.js';
 import { costHint } from '../session/output-budget.js';
-import { buildReactionReport } from '../events/reaction.js';
+import { buildReactionReport, summarizeReaction } from '../events/reaction.js';
 import { asString, asNumber, parseInteractive } from './tools-helpers.js';
 import { type ToolDef, sessionIdShape, commandOrThrow, snapshotTree } from './tool-kit.js';
 import { bufferEnvelope } from '../session/session-health.js';
@@ -198,7 +198,8 @@ export const READ_TOOLS: ToolDef[] = [
       const report = buildReactionReport(events, session.elapsed() - rec.cursor);
       // Self-generating oracles: propose ranked mustHold from what the recorded window actually did.
       const proposedConsequences = proposeConsequences(events);
-      return Promise.resolve({
+      const digest = summarizeReaction(report);
+      const body = {
         recordingName: name,
         program,
         ...(unstable > 0
@@ -207,8 +208,11 @@ export const READ_TOOLS: ToolDef[] = [
             }
           : {}),
         ...(proposedConsequences.length > 0 ? { proposedConsequences } : {}),
-        ...report,
-        cost: costHint(report, events.length),
+        ...digest,
+      };
+      return Promise.resolve({
+        ...body,
+        cost: costHint(body, events.length),
       });
     },
   },
