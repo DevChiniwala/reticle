@@ -44,6 +44,7 @@ function fakePool(): {
     activeCount: () => active,
     queuedCount: () => 0,
     leasedSessionIds: () => [],
+    leaseTtlMs: () => 300_000,
   } as unknown as BrowserPool;
   return { pool, acquired };
 }
@@ -145,6 +146,15 @@ describe('reticle_lease_acquire', () => {
     expect(navUrl.searchParams.get(RETICLE_URL_PARAM.SESSION)).toBe(result.sessionId);
     expect(navUrl.searchParams.get(RETICLE_URL_PARAM.PROJECT)).toBe('acme');
     expect(acquired[0]?.sessionId).toBe(result.sessionId);
+  });
+
+  it('returns expiresInMs so the agent knows when the lease will die', async () => {
+    const { pool } = fakePool();
+    const result = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool },
+      { url: 'http://localhost:3000/' },
+    )) as { expiresInMs: number };
+    expect(result.expiresInMs).toBe(300_000);
   });
 
   it('throws a clear error when no pool is available', async () => {

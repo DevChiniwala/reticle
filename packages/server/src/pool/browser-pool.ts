@@ -109,7 +109,11 @@ export class BrowserPool {
     this.#navTimeout = opts.navTimeoutMs ?? DEFAULT_NAV_TIMEOUT_MS;
   }
 
-  /** Currently leased contexts. */
+  /** The TTL configured for leases — how long an untouched lease lives before the reaper reclaims it. */
+  leaseTtlMs(): number {
+    return this.#ttl;
+  }
+
   /** Max simultaneous leases — the ceiling the parallel suite sizes its concurrency to. */
   capacity(): number {
     return this.#max;

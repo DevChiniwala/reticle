@@ -140,6 +140,11 @@ export const LEASE_TOOLS: ToolDef[] = [
         .describe(
           'Whether the leased tab connected — false ⇒ the app may not embed @reticlehq/core.',
         ),
+      expiresInMs: z
+        .number()
+        .describe(
+          'Milliseconds until this lease expires if untouched. Each tool call that targets this session resets the clock. Plan your work to finish or re-acquire before this runs out.',
+        ),
       leased: z.number().describe('How many contexts are currently leased from the pool.'),
       queued: z.number().describe('How many acquires are waiting for a free slot.'),
       hint: z.string().optional(),
@@ -171,6 +176,7 @@ export const LEASE_TOOLS: ToolDef[] = [
         sessionId: lease.sessionId,
         url,
         ready,
+        expiresInMs: pool.leaseTtlMs(),
         leased: pool.activeCount(),
         queued: pool.queuedCount(),
         ...(ready
