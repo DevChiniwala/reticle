@@ -124,7 +124,7 @@ describe('vite 8 dev boot with the plugin produces no define warnings (#165)', (
     const server = await createServer({
       root,
       configFile: false,
-      server: { port: 0 },
+      server: { port: 0, host: '127.0.0.1' },
       // Force the optimizer to run — without this, a warm .vite cache skips Rolldown entirely
       // and the warning never fires even when the options are wrong.
       optimizeDeps: { force: true },

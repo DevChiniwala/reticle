@@ -157,7 +157,7 @@ describe('the connect module picks up a token written after the dev server start
       root,
       logLevel: 'silent',
       configFile: false,
-      server: { port: 0 },
+      server: { port: 0, host: '127.0.0.1' },
       resolve: { alias: { '@reticlehq/react': join(root, 'src/sdk.js') } },
       plugins: [reticle()],
     });
