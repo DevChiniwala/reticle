@@ -116,6 +116,12 @@ function inspect(ref: string): unknown {
   // stamped host. `act` already did this; inspect did not, so the two tools disagreed about the same
   // ref and inspect — the tool you reach for to ask where something lives — was the one saying null.
   const source = formatSource(sourceFor(el, component?.source));
+  const scroll = {
+    scrollTop: el.scrollTop,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    overflowY: cs?.overflowY ?? 'visible',
+  };
   return {
     ...describe(el),
     ...(source !== undefined ? { source } : {}),
@@ -129,6 +135,7 @@ function inspect(ref: string): unknown {
     // not this control (a z-index/overlay bug the DOM tree cannot show).
     occluded: isOccluded(el, rect),
     styles,
+    scroll,
     // Theme compliance vs the app's design tokens (off-theme colors a DOM tool can't judge).
     theme: cs !== null ? themeReport(cs) : null,
     component,

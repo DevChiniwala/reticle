@@ -432,6 +432,14 @@ const RAW_TOOLS: ToolDef[] = [
         })
         .partial()
         .optional(),
+      scroll: z
+        .object({
+          scrollTop: z.number(),
+          scrollHeight: z.number(),
+          clientHeight: z.number(),
+          overflowY: z.string(),
+        })
+        .optional(),
       // Theme compliance vs the app's design tokens: { colorToken, colorTokens, backgroundToken,
       // backgroundTokens, offTheme, tokenCount, themeScope }. The plural fields carry EVERY token
       // matching the resolved colour; the singular ones abstain (null) when several tokens share it,

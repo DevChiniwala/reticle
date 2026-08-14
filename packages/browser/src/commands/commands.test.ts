@@ -74,6 +74,22 @@ describe('command registry (driven by the bridge)', () => {
     expect(result.tag).toBe('a');
   });
 
+  it('INSPECT returns scroll metrics for a ref', () => {
+    document.body.innerHTML = '<div style="overflow-y: auto; height: 100px;">content</div>';
+    const div = document.querySelector('div') as HTMLDivElement;
+    Object.defineProperty(div, 'scrollTop', { value: 50, configurable: true });
+    Object.defineProperty(div, 'scrollHeight', { value: 300, configurable: true });
+    Object.defineProperty(div, 'clientHeight', { value: 100, configurable: true });
+    const ref = refs.refFor(div);
+    const result = run(ReticleCommand.INSPECT, { ref }) as {
+      scroll: { scrollTop: number; scrollHeight: number; clientHeight: number; overflowY: string };
+    };
+    expect(result.scroll.scrollTop).toBe(50);
+    expect(result.scroll.scrollHeight).toBe(300);
+    expect(result.scroll.clientHeight).toBe(100);
+    expect(result.scroll.overflowY).toBe('auto');
+  });
+
   it('STATE_READ returns a registered store and its name', () => {
     registerStore('state_ws', () => ({ count: 7 }));
     const result = run(ReticleCommand.STATE_READ, { store: 'state_ws' }) as StateResult;
