@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { SERVER_VERSION } from '../version/server-version.js';
 import { CONTRACT_FINGERPRINT } from '@reticlehq/core';
 import { diagnoseDesktop, isDesktopProject } from '../init/desktop-doctor.js';
+import { diagnosePortMismatch, readProjectPort } from './cli-port.js';
 
 /**
  * `reticle doctor` — collapse the ~6 independent first-run failure modes into one command. Checks the
@@ -94,6 +95,9 @@ export async function handleDoctor(port: number): Promise<void> {
     );
   }
   line(`  bridge port  ${port}  (your app must dial THIS port — not your dev-server port)`);
+  const projectPort = readProjectPort(process.cwd());
+  const mismatch = diagnosePortMismatch(port, projectPort);
+  if (mismatch !== undefined) line(`  port check   ✗ ${mismatch}`);
   // Where to LOOK when something is wrong. The daemon has always written a structured log here and
   // nothing ever said so, so the first move in every investigation was reading source instead of
   // reading the log. `RETICLE_TRACE=1` turns the same stream into a per-stage trace — see

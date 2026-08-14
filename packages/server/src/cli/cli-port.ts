@@ -125,3 +125,23 @@ export function resolvePort(
 ): number {
   return portFlag ?? envPort ?? projectPort ?? defaultPort;
 }
+
+/**
+ * Detect a port mismatch between the daemon and the project's SDK configuration.
+ *
+ * Returns a diagnostic string when the daemon port differs from what `.reticle.json` declares.
+ * The SDK reads `.reticle.json` at build/connect time, so a mismatch means the app will dial a
+ * port nothing is listening on — the silent no-connect that #261 documents.
+ */
+export function diagnosePortMismatch(
+  daemonPort: number,
+  projectPort: number | undefined,
+): string | undefined {
+  if (projectPort === undefined) return undefined;
+  if (projectPort === daemonPort) return undefined;
+  return (
+    `.reticle.json says "port": ${String(projectPort)} but this daemon is on :${String(daemonPort)}` +
+    ` — the SDK will dial :${String(projectPort)} and never connect. ` +
+    `Either start the daemon with --port ${String(projectPort)}, or update .reticle.json to match.`
+  );
+}

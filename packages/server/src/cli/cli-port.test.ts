@@ -10,6 +10,7 @@ import {
   resolvePort,
   isLikelyDevServerPort,
   devServerPortWarning,
+  diagnosePortMismatch,
 } from './cli-port.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 
@@ -362,5 +363,31 @@ describe('isLikelyDevServerPort', () => {
     expect(w).toContain('3000');
     expect(w).toContain('.reticle.json');
     expect(w).toContain('4400');
+  });
+});
+
+// ─── diagnosePortMismatch ───────────────────────────────────────────────────
+
+describe('diagnosePortMismatch', () => {
+  it('returns undefined when no project port is configured', () => {
+    expect(diagnosePortMismatch(4400, undefined)).toBeUndefined();
+  });
+
+  it('returns undefined when the daemon port matches .reticle.json', () => {
+    expect(diagnosePortMismatch(4460, 4460)).toBeUndefined();
+  });
+
+  it('returns a diagnostic when the daemon port differs from .reticle.json', () => {
+    const msg = diagnosePortMismatch(4400, 4460);
+    expect(msg).toBeDefined();
+    expect(msg).toContain('4460');
+    expect(msg).toContain('4400');
+    expect(msg).toContain('.reticle.json');
+  });
+
+  it('names both the fix options: start with --port or update .reticle.json', () => {
+    const msg = diagnosePortMismatch(4400, 4460);
+    expect(msg).toContain('--port 4460');
+    expect(msg).toContain('update .reticle.json');
   });
 });
