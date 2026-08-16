@@ -1,0 +1,63 @@
+name: Benchmark Gate
+
+# Post-merge only: runs after a commit lands on main, reports regressions without blocking.
+# Attribution is precise (one commit), and the baseline in bench/history.jsonl is stable.
+# See #351 for why this is post-merge rather than blocking PRs.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # manual trigger for testing
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The benchmark suite boots real fixtures (api + bench-app in a real browser) and drives them
+      # via MCP, measuring token cost and detection accuracy. Default pass is REPLAY only (fast,
+      # deterministic, pure Reticle) — the full OBSERVATION-COST pass is slower and not required for
+      # the regression gate's hard floor.
+      - name: Run benchmark suite (REPLAY pass)
+        run: pnpm bench
+        env:
+          # Telemetry off: this is a deterministic measurement run, not a user session.
+          RETICLE_TELEMETRY: '0'
+          # Raise fixture ready timeout for CI: shared runners are slower than local dev machines.
+          BENCH_FIXTURE_READY_MS: '45000'
+          BENCH_RETICLE_READY_MS: '5000'
+
+      # The gate compares fresh results (bench/raw/*.json) against the last row in history.jsonl and
+      # fails on regression: efficiency drop > 3%, token rise > 5%, detection not full. Reported here
+      # rather than blocking, so a legitimate cost increase (bought information) doesn't wedge merges.
+      - name: Check for regressions
+        run: pnpm bench:gate
+        # Non-blocking: a regression here is a REPORT, not a gate. The failure lands in this job's
+        # log and is visible immediately (one commit attribution), but does not red the workflow or
+        # block future merges. A gate that cannot tell "we paid for this" from "we regressed" blocks
+        # good changes, and option 1 from #351 explicitly chose reporting over blocking.
+        continue-on-error: true
+
+      # Upload raw results and gate output on failure so triaging a regression doesn't require
+      # re-running the 50-minute benchmark locally.
+      - name: Upload benchmark artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: benchmark-gate-results
+          path: |
+            bench/raw/*.json
+            bench/history.jsonl
+          if-no-files-found: ignore
+          retention-days: 30
