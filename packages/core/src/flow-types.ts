@@ -295,6 +295,8 @@ export interface FlowReplayResult {
   decision?: ReplayDecision;
   /** Set when status === 'error' (load failure or resolved action failure). */
   error?: { code: string; message: string };
+  /** Set when status === 'unverifiable': why this flow cannot prove anything. */
+  unverifiable_reason?: string;
   /**
    * The confident rebind proposals aggregated across drifted steps (additive,
    * optional — present only when at least one drifted step has a confident nearest match).

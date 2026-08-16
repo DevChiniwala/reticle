@@ -131,7 +131,7 @@ describe('reticle_flow_replay handler — temp dir, never touches the repo', () 
     if (!res.ok) throw new Error(`save failed: ${res.code}`);
   }
 
-  it('A: a flow whose testids all resolve replays with status ok', async () => {
+  it('A: an assertion-free flow reports unverifiable rather than bare ok', async () => {
     await saveFlow('green', [actStep('chat-send'), actStep('chat-input')]);
     const session = scriptedSession((testid) => ({ elements: [{ ref: `e-${testid}` }] }));
     const deps = fakeDeps(fs, root, session);
@@ -139,10 +139,23 @@ describe('reticle_flow_replay handler — temp dir, never touches the repo', () 
     const res = (await tool(ReticleTool.FLOW_REPLAY).handler(deps, {
       flowName: 'green',
     })) as FlowReplayResult;
-    expect(res.status).toBe(ReplayStatus.OK);
+    expect(res.status).toBe(ReplayStatus.UNVERIFIABLE);
+    expect(res.unverifiable_reason).toBeDefined();
     expect(res.name).toBe('green');
     expect(res.steps).toHaveLength(2);
     expect(res.steps.every((s) => s.ok)).toBe(true);
+  });
+
+  it('unverifiable carries a reason the agent can read', async () => {
+    await saveFlow('bare', [actStep('chat-send')]);
+    const session = scriptedSession((testid) => ({ elements: [{ ref: `e-${testid}` }] }));
+    const deps = fakeDeps(fs, root, session);
+
+    const res = (await tool(ReticleTool.FLOW_REPLAY).handler(deps, {
+      flowName: 'bare',
+    })) as FlowReplayResult;
+    expect(res.status).toBe(ReplayStatus.UNVERIFIABLE);
+    expect(res.unverifiable_reason).toContain('consequence');
   });
 
   it('B: a flow with one renamed testid returns status drift with a computed nearest', async () => {

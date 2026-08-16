@@ -142,6 +142,12 @@ export function buildSuiteVerdict(
   const unverifiable: { flow: string; reason: string }[] = [];
   let passed = 0;
   for (const { replay, flow } of runs) {
+    if (replay.status === ReplayStatus.UNVERIFIABLE) {
+      const reason =
+        replay.unverifiable_reason ?? unverifiableReason(flow) ?? 'assertion-free flow';
+      unverifiable.push({ flow: replay.name, reason });
+      continue;
+    }
     if (replay.status === ReplayStatus.OK) {
       const reason = unverifiableReason(flow);
       // A green that cannot go red is not a pass. Counted apart, so `passed` stays a count of things

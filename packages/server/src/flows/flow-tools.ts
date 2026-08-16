@@ -311,8 +311,14 @@ export const FLOW_TOOLS: ToolDef[] = [
       // The flow's name — always present in FlowReplayResult (the description promises `{ name, … }`),
       // but omitted here, so a validating profile stripped it and a replay result arrived anonymous.
       name: z.string(),
-      status: z.string().describe('ok | drift | error'),
+      status: z.string().describe('ok | drift | error | unverifiable'),
       steps: z.array(z.unknown()),
+      unverifiable_reason: z
+        .string()
+        .optional()
+        .describe(
+          'Present when status is unverifiable: why this flow cannot prove anything (assertion-free).',
+        ),
       proposals: z.array(z.unknown()).optional(),
       deviation: z
         .unknown()

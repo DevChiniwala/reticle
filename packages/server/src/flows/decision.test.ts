@@ -307,4 +307,18 @@ describe('buildSuiteVerdict — a flow that cannot fail is not a pass', () => {
     expect(v.status).toBe('pass');
     expect(v.passed).toBe(1);
   });
+
+  it('a replay with status UNVERIFIABLE is counted as unverifiable without re-classifying', () => {
+    const replay: FlowReplayResult = {
+      name: 'bare-ok',
+      status: ReplayStatus.UNVERIFIABLE,
+      steps: [{ step: 0, tool: 'reticle_act', anchor: 'x', ok: true }],
+      unverifiable_reason: 'This flow asserts no observable consequence.',
+    };
+    const v = buildSuiteVerdict([{ replay, flow: assertingFlow('bare-ok') }]);
+    expect(v.status).toBe('unverifiable');
+    expect(v.passed).toBe(0);
+    expect(v.unverifiable?.[0]?.flow).toBe('bare-ok');
+    expect(v.unverifiable?.[0]?.reason).toContain('consequence');
+  });
 });

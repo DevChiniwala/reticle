@@ -15,6 +15,7 @@ import { asString } from '../tools/tools-helpers.js';
 import { replayFlow } from './flow-replay.js';
 import { assertSuccess, dynamicTestids, successLabel, SUCCESS_STEP_TOOL } from './flow-success.js';
 import { buildDecision } from './decision.js';
+import { classifyFlowAssertions, FlowAssertionGrade } from './flow-classify.js';
 import { waitForPredicate } from '../events/predicate.js';
 import { computeSegments } from '../journal/rollups.js';
 import { AssertionTiersStore } from './assertion-tiers-store.js';
@@ -58,6 +59,7 @@ export function flowErrorMessage(code: FlowErrorCode): string {
 function replayToRunStatus(status: ReplayStatus): RunStatus {
   switch (status) {
     case ReplayStatus.OK:
+    case ReplayStatus.UNVERIFIABLE:
       return RunStatus.PASS;
     case ReplayStatus.DRIFT:
       return RunStatus.DRIFT;
@@ -192,7 +194,8 @@ export async function replayNamedFlow(
   }
   const driftSteps = steps.filter((s) => s.drift !== undefined).length;
   const allOk = steps.every((s) => s.ok);
-  const status = driftSteps > 0 ? ReplayStatus.DRIFT : allOk ? ReplayStatus.OK : ReplayStatus.ERROR;
+  let status: ReplayStatus =
+    driftSteps > 0 ? ReplayStatus.DRIFT : allOk ? ReplayStatus.OK : ReplayStatus.ERROR;
   await recordReplayRun(deps, name, status, driftSteps, deps.now() - startedAt, projectId);
   // Anti-reward-hacking baseline: record what this flow asserted ONLY when it passed clean. A
   // failing run must never become the baseline a later weakening is measured against.
@@ -206,6 +209,18 @@ export async function replayNamedFlow(
       // Record what this flow COVERS so a later deletion can be scoped to the files that changed.
       toFlowSources([{ name, steps: loaded.value.steps }])[0]?.sources ?? [],
     );
+  }
+  // A green that cannot go red is not an "ok" — it is unverifiable. Matching the suite vocabulary
+  // so an agent reading a single-flow replay gets the same signal flow_verify gives the suite.
+  let unverifiableReason: string | undefined;
+  if (status === ReplayStatus.OK) {
+    const classification = classifyFlowAssertions(loaded.value);
+    if (classification.grade === FlowAssertionGrade.ASSERTION_FREE) {
+      status = ReplayStatus.UNVERIFIABLE;
+      unverifiableReason =
+        classification.warning ??
+        'This flow asserts no observable consequence, so it passes even if the feature is broken.';
+    }
   }
   // Push-default: the deviation report over this drive's segments, learned across runs. Best-effort.
   const deviation = await computeReplayDeviation(deps, session, replayFloor);
@@ -223,7 +238,10 @@ export async function replayNamedFlow(
     return errored;
   }
   const result: FlowReplayResult = { name, status, steps };
-  if (status !== ReplayStatus.OK) result.decision = buildDecision(result, loaded.value);
+  if (unverifiableReason !== undefined) result.unverifiable_reason = unverifiableReason;
+  if (status !== ReplayStatus.OK && status !== ReplayStatus.UNVERIFIABLE) {
+    result.decision = buildDecision(result, loaded.value);
+  }
   applyStartPathHint(result, startPathHint);
   if (deviation !== undefined) result.deviation = deviation;
   return result;

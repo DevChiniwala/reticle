@@ -94,6 +94,7 @@ export const ReplayStatus = {
   OK: 'ok', // every anchor resolved and every step ran green
   DRIFT: 'drift', // an anchor missed (testid renamed / signal not observed) — legible drift returned
   ERROR: 'error', // the flow could not load or a resolved action failed
+  UNVERIFIABLE: 'unverifiable', // steps ran green but the flow asserts no observable consequence
 } as const;
 export type ReplayStatus = (typeof ReplayStatus)[keyof typeof ReplayStatus];
 
