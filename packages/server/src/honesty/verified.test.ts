@@ -355,3 +355,45 @@ describe('every verdict names the clause that decided it', () => {
     expect([...Object.values(VerifiedReason)].filter((r) => !produced.has(r))).toEqual([]);
   });
 });
+
+describe('an explicit until predicate that passed overrides settlement', () => {
+  it('pass:true + untilDeclared + settled:false = PROVED (not UNSETTLED)', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: false,
+      untilDeclared: true,
+    });
+    expect(v.verified).toBe(Verified.YES);
+    expect(v.verifiedReason).toBe(VerifiedReason.PROVED);
+  });
+
+  it('pass:true + NO untilDeclared + settled:false = still UNSETTLED (existing behavior)', () => {
+    const v = decideVerified({ pass: true, honesty: clean(), settled: false });
+    expect(v.verified).toBe(Verified.UNKNOWN);
+    expect(v.verifiedReason).toBe(VerifiedReason.UNSETTLED);
+  });
+
+  it('pass:false + untilDeclared + settled:false = ASSERTION_FAILED (failure still outranks)', () => {
+    const v = decideVerified({
+      pass: false,
+      honesty: clean(),
+      settled: false,
+      untilDeclared: true,
+    });
+    expect(v.verified).toBe(Verified.NO);
+    expect(v.verifiedReason).toBe(VerifiedReason.ASSERTION_FAILED);
+  });
+
+  it('pass:true + untilDeclared + observed contradiction + settled:false = CONTRADICTED', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: false,
+      untilDeclared: true,
+      contradictions: [{ kind: 'ui-advanced-request-failed' }],
+    });
+    expect(v.verified).toBe(Verified.NO);
+    expect(v.verifiedReason).toBe(VerifiedReason.CONTRADICTED);
+  });
+});

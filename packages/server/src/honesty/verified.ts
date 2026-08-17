@@ -52,6 +52,8 @@ interface VerifiedInputs {
    * never read. See `hasUnreadWriteOutcome` — the status line describes the transport, not the result.
    */
   outcomeUnread?: boolean;
+  /** True when the caller passed an explicit `until` predicate to the tool. */
+  untilDeclared?: boolean;
   /**
    * What the wait was for and what the window held when it ended — read ONLY by the two clauses that
    * answer UNSETTLED, which is the commonest reason a verdict comes back `unknown` and was also the
@@ -230,7 +232,11 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   }
 
   // Never settled: the page may still be moving, so the observation window may have closed early.
-  if (false === settled) {
+  // Exception: when the caller declared an explicit `until` predicate and it passed, the predicate
+  // IS the evidence — settlement is a fallback heuristic, not a higher authority. Five agent reports
+  // across four apps showed the predicate satisfied but verdict overridden to unknown/unsettled
+  // because idle never arrived (poll churn, throttled tab).
+  if (false === settled && !(true === inputs.untilDeclared && true === pass)) {
     return {
       verified: Verified.UNKNOWN,
       verifiedReason: VerifiedReason.UNSETTLED,

@@ -600,6 +600,7 @@ export const ACT_TOOLS: ToolDef[] = [
         // this is the only one that has to be interpreted, and now it interprets itself.
         const outcomePending = hasAcceptedWrite(windowEvents);
         const outcomeUnread = hasUnreadWriteOutcome(windowEvents);
+        const untilDeclared = withUntil['until'] !== undefined;
         const decision = decideVerified({
           pass: verdict.pass,
           ...(alreadyTrue ? { alreadyTrue } : {}),
@@ -613,6 +614,7 @@ export const ACT_TOOLS: ToolDef[] = [
           contradictions,
           ...(outcomePending ? { outcomePending } : {}),
           ...(outcomeUnread ? { outcomeUnread } : {}),
+          ...(untilDeclared ? { untilDeclared } : {}),
           // `settled` is genuinely optional: a wait that declared no predicate never measured it, and
           // passing `false` there would report "never settled" about something never asked to settle.
           ...(settledOutcome === undefined ? {} : { settled: settledOutcome }),
