@@ -449,6 +449,36 @@ describe('installNetwork (fetch)', () => {
     expect(net[1]?.data['id']).toBe(net[0]?.data['id']);
   });
 
+  it('classifies a 3xx redirect as ok (matching XHR behavior)', async () => {
+    window.fetch = vi.fn(() => Promise.resolve(fakeResponse(303)));
+    const { emit, events } = collect();
+    teardown = installNetwork(emit);
+
+    await window.fetch('http://localhost:8787/api/login');
+    await flushBody();
+
+    expect(eventOf(events, EventType.NET_REQUEST)).toMatchObject({
+      status: 303,
+      ok: true,
+      initiator: 'fetch',
+    });
+  });
+
+  it('classifies a 4xx as not ok via fetch', async () => {
+    window.fetch = vi.fn(() => Promise.resolve(fakeResponse(404)));
+    const { emit, events } = collect();
+    teardown = installNetwork(emit);
+
+    await window.fetch('http://localhost:8787/api/missing');
+    await flushBody();
+
+    expect(eventOf(events, EventType.NET_REQUEST)).toMatchObject({
+      status: 404,
+      ok: false,
+      initiator: 'fetch',
+    });
+  });
+
   it('captures the method from init for a POST (completion is the second event)', async () => {
     window.fetch = vi.fn(() => Promise.resolve(fakeResponse(200)));
     const { emit, events } = collect();
@@ -708,5 +738,22 @@ describe('installNetwork (XMLHttpRequest)', () => {
     expect(done.length).toBe(2); // NOT 3 — the first send's listener must not re-fire on the second
     expect(done.map((e) => e.data['url'])).toEqual(['/first', '/second']);
     expect(done.map((e) => e.data['status'])).toEqual([200, 201]);
+  });
+
+  it('classifies a 3xx XHR as ok (matching fetch)', () => {
+    window.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest;
+    const { emit, events } = collect();
+    const teardown = installNetwork(emit);
+    const xhr = new window.XMLHttpRequest() as unknown as FakeXHR;
+    xhr.open('POST', '/api/login');
+    xhr.send();
+    xhr.complete({ status: 303 });
+    teardown();
+
+    expect(events.find((e) => e.type === EventType.NET_REQUEST)?.data).toMatchObject({
+      status: 303,
+      ok: true,
+      initiator: 'xhr',
+    });
   });
 });
