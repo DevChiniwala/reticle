@@ -23,6 +23,7 @@ import {
   evalAnimation,
   evalSignal,
   evalSettled,
+  isDecidedNegative,
   residualQueryChecks,
   satisfiesResiduals,
   describeResidual,
@@ -588,6 +589,25 @@ export function waitForPredicate(
       void evaluatePredicate(session, predicate, since, false)
         .then((r) => {
           if (!r.pass) {
+            if (
+              isDecidedNegative(
+                session.eventsSince(Math.max(since, predicateSince(predicate))),
+                predicate,
+              )
+            ) {
+              void evaluatePredicate(session, predicate, since)
+                .then((final) => {
+                  finish({
+                    ...final,
+                    pass: false,
+                    failureReason: final.failureReason ?? 'timed out waiting for predicate',
+                  });
+                })
+                .catch((error: unknown) => {
+                  finish(failed(error));
+                });
+              return;
+            }
             // A time-based failure knows when it could stop being one — re-check THEN rather than on
             // the next blind tick. Without this, every `settled` wait paid up to a full poll interval
             // of dead time after the quiet window had already closed: measured at 566–627ms across

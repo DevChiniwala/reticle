@@ -1268,3 +1268,146 @@ describe('net predicate: ok — asserting on outcome, not a fabricated status', 
     expect((await evaluatePredicate(session, { kind: 'net', status: 500 })).pass).toBe(true);
   });
 });
+
+describe('decided negative — early exit when the outcome is already determined', () => {
+  class LiveSession implements PredicateSession {
+    readonly #events: ReticleEvent[] = [];
+    readonly #listeners = new Set<(event: ReticleEvent) => void>();
+    elapsed(): number {
+      return 0;
+    }
+    command(): Promise<CommandResult> {
+      return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+    }
+    eventsSince(cursor = 0): ReticleEvent[] {
+      return this.#events.filter((e) => e.t >= cursor);
+    }
+    onEvent(listener: (event: ReticleEvent) => void): () => void {
+      this.#listeners.add(listener);
+      return () => {
+        this.#listeners.delete(listener);
+      };
+    }
+    push(event: ReticleEvent): void {
+      this.#events.push(event);
+      for (const l of this.#listeners) l(event);
+    }
+  }
+
+  it('exits early when a NET request completed with the wrong status', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'net', method: 'POST', urlContains: '/api/orders', status: 200 },
+      10_000,
+    );
+    session.push(
+      ev(EventType.NET_REQUEST, { method: 'POST', url: '/api/orders', status: 500, ok: false }, 5),
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('exits early when a NET request completed with wrong ok', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'net', urlContains: '/api/login', ok: true },
+      10_000,
+    );
+    session.push(
+      ev(EventType.NET_REQUEST, { method: 'POST', url: '/api/login', status: 500, ok: false }, 5),
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('does NOT exit early when no request to that URL has arrived yet', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'net', urlContains: '/api/orders', status: 200 },
+      300,
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+  });
+
+  it('does NOT exit early for a count predicate even with wrong status', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'net', urlContains: '/api/orders', status: 200, count: 1 },
+      300,
+    );
+    session.push(
+      ev(EventType.NET_REQUEST, { method: 'POST', url: '/api/orders', status: 500, ok: false }, 5),
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+  });
+
+  it('exits early when the route changed to the wrong pathname', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(session, { kind: 'route', pathname: '/dashboard' }, 10_000);
+    session.push(ev(EventType.ROUTE_CHANGE, { pathname: '/settings', to: '/settings' }, 5));
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(r.assertion).toBe('route.pathname');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('exits early when the route does not contain the expected string', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(session, { kind: 'route', contains: '/checkout' }, 10_000);
+    session.push(
+      ev(EventType.ROUTE_CHANGE, { pathname: '/cart', to: '/cart', search: '', hash: '' }, 5),
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(r.assertion).toBe('route.contains');
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('does NOT exit early when no route change has occurred', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(session, { kind: 'route', pathname: '/dashboard' }, 300);
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+  });
+
+  it('does NOT exit early for a signal predicate (only NET/ROUTE qualify)', async () => {
+    const session = new LiveSession();
+    const started = Date.now();
+    const verdict = waitForPredicate(session, { kind: 'signal', name: 'auth:granted' }, 300);
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+  });
+
+  it('still resolves immediately when the NET predicate passes', async () => {
+    const session = new LiveSession();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'net', method: 'POST', urlContains: '/api/orders', status: 200 },
+      10_000,
+    );
+    session.push(
+      ev(EventType.NET_REQUEST, { method: 'POST', url: '/api/orders', status: 200, ok: true }, 5),
+    );
+    const r = await verdict;
+    expect(r.pass).toBe(true);
+  });
+});

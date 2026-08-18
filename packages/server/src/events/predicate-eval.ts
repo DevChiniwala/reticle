@@ -615,6 +615,71 @@ export function evalRoute(
   return { pass: true, evidence: last.data };
 }
 
+/**
+ * A decided negative is a failing predicate whose outcome is ALREADY DETERMINED — no future event
+ * in the session can flip it to pass. Burning the remaining timeout budget on one is pure latency
+ * with zero information gain.
+ *
+ * Three conditions qualify:
+ * 1. NET with a status/ok filter: a request matching URL/method already completed with the wrong
+ *    status. A completed HTTP response is immutable.
+ * 2. ROUTE with pathname/contains: the route already changed to a different path. The action's
+ *    navigation consequence already landed elsewhere.
+ * 3. Page navigation (disconnect) — handled separately by onDisconnect, not here.
+ */
+export function isDecidedNegative(events: ReticleEvent[], predicate: Predicate): boolean {
+  switch (predicate.kind) {
+    case PredicateKind.NET:
+      return isNetDecided(events, predicate);
+    case PredicateKind.ROUTE:
+      return isRouteDecided(events, predicate);
+    default:
+      return false;
+  }
+}
+
+function isNetDecided(
+  events: ReticleEvent[],
+  p: Extract<Predicate, { kind: typeof PredicateKind.NET }>,
+): boolean {
+  if (p.status === undefined && p.ok === undefined) return false;
+  if (p.count !== undefined) return false;
+  const since = p.since ?? 0;
+  const urlMethodMatches = events.filter((e) => {
+    if (e.type !== EventType.NET_REQUEST || e.t < since) return false;
+    const d = e.data;
+    if (p.method !== undefined && str(d['method'])?.toUpperCase() !== p.method.toUpperCase()) {
+      return false;
+    }
+    if (p.urlContains !== undefined && !(str(d['url']) ?? '').includes(p.urlContains)) return false;
+    return true;
+  });
+  if (0 === urlMethodMatches.length) return false;
+  return urlMethodMatches.every((e) => {
+    const d = e.data;
+    if (p.status !== undefined && num(d['status']) !== p.status) return true;
+    if (p.ok !== undefined && callSucceeded(d) !== p.ok) return true;
+    return false;
+  });
+}
+
+function isRouteDecided(
+  events: ReticleEvent[],
+  p: Extract<Predicate, { kind: typeof PredicateKind.ROUTE }>,
+): boolean {
+  if (p.pathname === undefined && p.contains === undefined) return false;
+  const routes = events.filter((e) => e.type === EventType.ROUTE_CHANGE);
+  const last = routes.at(-1);
+  if (last === undefined) return false;
+  const pathname = str(last.data['pathname']) ?? str(last.data['to']) ?? '';
+  if (p.pathname !== undefined && pathname !== p.pathname) return true;
+  if (p.contains !== undefined) {
+    const fullRoute = `${pathname}${str(last.data['search']) ?? ''}${str(last.data['hash']) ?? ''}`;
+    if (!fullRoute.includes(p.contains)) return true;
+  }
+  return false;
+}
+
 /** The only console levels Reticle instruments (console.info/debug/trace are NOT patched). */
 const CONSOLE_LEVEL_TYPE: Readonly<Record<string, EventType>> = {
   log: EventType.CONSOLE_LOG,
