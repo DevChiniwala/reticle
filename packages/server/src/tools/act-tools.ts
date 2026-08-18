@@ -600,9 +600,11 @@ export const ACT_TOOLS: ToolDef[] = [
         // this is the only one that has to be interpreted, and now it interprets itself.
         const outcomePending = hasAcceptedWrite(windowEvents);
         const outcomeUnread = hasUnreadWriteOutcome(windowEvents);
+        const untilDeclared = withUntil['until'] !== undefined;
         const decision = decideVerified({
           pass: verdict.pass,
           ...(alreadyTrue ? { alreadyTrue } : {}),
+          ...(untilDeclared ? { untilDeclared } : {}),
           // An assertion nobody could evaluate must not be reported as one the app failed.
           ...(verdict.inconclusive === undefined ? {} : { inconclusive: verdict.inconclusive }),
           // Nor must one nobody could OBSERVE. This is the act path, so it is the one that produced

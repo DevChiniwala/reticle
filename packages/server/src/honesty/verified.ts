@@ -53,6 +53,12 @@ interface VerifiedInputs {
    */
   outcomeUnread?: boolean;
   /**
+   * The caller declared an explicit `until` predicate (not just the default settle-wait). When a
+   * declared predicate passes, settlement is corroborating evidence, not a veto — the caller said
+   * what to look for and it was found.
+   */
+  untilDeclared?: boolean;
+  /**
    * What the wait was for and what the window held when it ended — read ONLY by the two clauses that
    * answer UNSETTLED, which is the commonest reason a verdict comes back `unknown` and was also the
    * least actionable. Optional: without it those clauses say exactly what they said before.
@@ -230,7 +236,11 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   }
 
   // Never settled: the page may still be moving, so the observation window may have closed early.
-  if (false === settled) {
+  // Exception: when the caller declared an explicit `until` predicate and it passed, settlement is
+  // corroborating evidence, not a veto. The caller said what to look for, it was found, and the
+  // page merely never went idle — the common case on a throttled tab an agent drives while the
+  // human works elsewhere.
+  if (false === settled && !(true === inputs.untilDeclared && true === pass)) {
     return {
       verified: Verified.UNKNOWN,
       verifiedReason: VerifiedReason.UNSETTLED,
