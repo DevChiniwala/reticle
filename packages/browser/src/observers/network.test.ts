@@ -499,6 +499,32 @@ describe('installNetwork (fetch)', () => {
     });
   });
 
+  it('classifies a 3xx redirect as ok:true (matching XHR behavior)', async () => {
+    window.fetch = vi.fn(() => Promise.resolve(fakeResponse(303)));
+    const { emit, events } = collect();
+    teardown = installNetwork(emit);
+    await window.fetch('http://localhost:8787/login', { method: 'POST' });
+    await flushBody();
+    expect(eventOf(events, EventType.NET_REQUEST)).toMatchObject({
+      method: 'POST',
+      status: 303,
+      ok: true,
+      initiator: 'fetch',
+    });
+  });
+
+  it('classifies a 4xx as ok:false via fetch (same as XHR)', async () => {
+    window.fetch = vi.fn(() => Promise.resolve(fakeResponse(404)));
+    const { emit, events } = collect();
+    teardown = installNetwork(emit);
+    await window.fetch('http://localhost:8787/missing');
+    await flushBody();
+    expect(eventOf(events, EventType.NET_REQUEST)).toMatchObject({
+      status: 404,
+      ok: false,
+    });
+  });
+
   it('restores the original fetch on teardown', () => {
     // Read as stored values on both sides: the assertion is about WHICH FUNCTION OBJECT sits in the
     // slot before and after, which is exactly what a descriptor read returns and what teardown has
@@ -708,5 +734,20 @@ describe('installNetwork (XMLHttpRequest)', () => {
     expect(done.length).toBe(2); // NOT 3 — the first send's listener must not re-fire on the second
     expect(done.map((e) => e.data['url'])).toEqual(['/first', '/second']);
     expect(done.map((e) => e.data['status'])).toEqual([200, 201]);
+  });
+
+  it('classifies a 3xx XHR as ok:true (matching fetch)', () => {
+    window.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest;
+    const { emit, events } = collect();
+    const teardown = installNetwork(emit);
+    const xhr = new window.XMLHttpRequest() as unknown as FakeXHR;
+    xhr.open('POST', '/login');
+    xhr.send();
+    xhr.complete({ status: 303 });
+    teardown();
+
+    const done = events.find((e) => e.type === EventType.NET_REQUEST);
+    expect(done?.data['status']).toBe(303);
+    expect(done?.data['ok']).toBe(true);
   });
 });

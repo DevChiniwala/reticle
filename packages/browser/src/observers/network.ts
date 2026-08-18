@@ -286,7 +286,7 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
           method,
           url,
           status: res.status,
-          ok: res.ok,
+          ok: res.status >= 200 && res.status < 400,
           durationMs: Math.round(headersAt - start),
           initiator: 'fetch',
           ...initiatorFields,
