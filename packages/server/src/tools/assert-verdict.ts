@@ -1,4 +1,4 @@
-import { CaptureLoss } from '@reticlehq/core';
+import { BlindSpotKind, CaptureLoss } from '@reticlehq/core';
 import type { Predicate } from '../events/predicate.js';
 import type { Session } from '../session/session.js';
 import { findContradictions, type Contradiction } from '../events/contradictions.js';
@@ -89,12 +89,23 @@ export async function assertVerdict(
   // input `decideVerified` reads for that.
   const gap = transportGapNote(windowEvents);
   const impeachingNotes = [impeaching.note, gap].filter((n): n is string => n !== undefined);
+  const DOM_ABSENCE_SPOTS: ReadonlySet<BlindSpotKind> = new Set([
+    BlindSpotKind.VIRTUALIZED_UNMOUNTED,
+    BlindSpotKind.CLOSED_SHADOW_ROOT,
+  ]);
+  const absenceRelevantSpots =
+    'absent' in predicate && true === predicate.absent
+      ? spots.filter((s) => DOM_ABSENCE_SPOTS.has(s.kind))
+      : [];
   const outcomePending = hasAcceptedWrite(windowEvents);
   const outcomeUnread = hasUnreadWriteOutcome(windowEvents);
   const decision = decideVerified({
     pass,
     ...(inconclusive === undefined ? {} : { inconclusive }),
     ...(true === observationLost ? { observationLost: true } : {}),
+    ...(absenceRelevantSpots.length > 0
+      ? { absenceUnobserved: absenceRelevantSpots.map((s) => `${String(s.count)} ${s.kind}`) }
+      : {}),
     honesty: buildHonestyBlock({
       grade: gradeOfPredicate(predicate),
       attribution: 'window',

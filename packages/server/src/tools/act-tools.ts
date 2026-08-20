@@ -9,6 +9,7 @@ import { captureAct, compileSequenceStep } from '../flows/replay.js';
 import {
   ActionType,
   ActionWarning,
+  BlindSpotKind,
   CaptureLoss,
   DEFAULT_ASSERT_TIMEOUT_MS,
   InputMode,
@@ -598,11 +599,22 @@ export const ACT_TOOLS: ToolDef[] = [
         });
         // The single field an agent reads. Everything below it is the evidence it was derived from;
         // this is the only one that has to be interpreted, and now it interprets itself.
+        const DOM_ABSENCE_SPOTS: ReadonlySet<BlindSpotKind> = new Set([
+          BlindSpotKind.VIRTUALIZED_UNMOUNTED,
+          BlindSpotKind.CLOSED_SHADOW_ROOT,
+        ]);
+        const absenceRelevantSpots =
+          'absent' in until && true === until.absent
+            ? spots.filter((s) => DOM_ABSENCE_SPOTS.has(s.kind))
+            : [];
         const outcomePending = hasAcceptedWrite(windowEvents);
         const outcomeUnread = hasUnreadWriteOutcome(windowEvents);
         const decision = decideVerified({
           pass: verdict.pass,
           ...(alreadyTrue ? { alreadyTrue } : {}),
+          ...(absenceRelevantSpots.length > 0
+            ? { absenceUnobserved: absenceRelevantSpots.map((s) => `${String(s.count)} ${s.kind}`) }
+            : {}),
           // An assertion nobody could evaluate must not be reported as one the app failed.
           ...(verdict.inconclusive === undefined ? {} : { inconclusive: verdict.inconclusive }),
           // Nor must one nobody could OBSERVE. This is the act path, so it is the one that produced

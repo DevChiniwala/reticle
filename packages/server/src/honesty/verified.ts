@@ -58,6 +58,13 @@ interface VerifiedInputs {
    * least actionable. Optional: without it those clauses say exactly what they said before.
    */
   unsettled?: UnsettledWindow;
+  /**
+   * Blind-spot descriptions that could hide the absence target. Present ONLY for absence assertions
+   * with relevant spots — `VIRTUALIZED_UNMOUNTED` and `CLOSED_SHADOW_ROOT` are the two that can
+   * physically conceal a DOM element; structural boundaries like `CROSS_ORIGIN_IFRAME` observe the
+   * DOM and are not relevant.
+   */
+  absenceUnobserved?: readonly string[];
 }
 
 interface VerifiedVerdict {
@@ -238,6 +245,18 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
         'the page never settled, so the reaction window may have closed before the app finished',
         inputs.unsettled,
       ),
+    };
+  }
+
+  // Absence is a universal claim: "not found anywhere". Partial coverage means "not found where we
+  // looked", which is weaker. Only spots that could HIDE a DOM element are relevant — virtualized
+  // unmounted rows and closed shadow roots; structural boundaries observe the DOM and cannot conceal.
+  if (inputs.absenceUnobserved !== undefined && inputs.absenceUnobserved.length > 0) {
+    const spots = inputs.absenceUnobserved.join(', ');
+    return {
+      verified: Verified.UNKNOWN,
+      verifiedReason: VerifiedReason.ABSENCE_UNPROVED,
+      because: `the assertion claims absence, but ${spots} could hide the target — absence is only proved over a complete view`,
     };
   }
 

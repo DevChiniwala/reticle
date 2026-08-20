@@ -71,6 +71,8 @@ export const VerifiedReason = {
   OUTCOME_UNREAD: 'outcome_unread',
   /** The page never settled, so the reaction window may have closed early. */
   UNSETTLED: 'unsettled',
+  /** The assertion claims absence, but unobserved regions could hide the target. */
+  ABSENCE_UNPROVED: 'absence_unproved',
   /** Held at a real grade over a clean capture with no channel disagreeing. */
   PROVED: 'proved',
 } as const;

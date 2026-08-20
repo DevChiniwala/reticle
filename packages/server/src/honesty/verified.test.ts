@@ -195,6 +195,60 @@ describe('a lost connection is not a failed assertion', () => {
   });
 });
 
+describe('an absence assertion over unobserved regions is not proved', () => {
+  it('is UNKNOWN when relevant blind spots could hide the target', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: true,
+      absenceUnobserved: ['21 virtualized-unmounted'],
+    });
+    expect(v.verified).toBe(Verified.UNKNOWN);
+    expect(v.verifiedReason).toBe(VerifiedReason.ABSENCE_UNPROVED);
+    expect(v.because).toContain('could hide the target');
+  });
+
+  it('is still YES when no relevant blind spots exist', () => {
+    expect(decideVerified({ pass: true, honesty: clean(), settled: true }).verified).toBe(
+      Verified.YES,
+    );
+  });
+
+  it('a failure still outranks an unproved absence', () => {
+    const v = decideVerified({
+      pass: false,
+      honesty: clean(),
+      settled: true,
+      absenceUnobserved: ['5 virtualized-unmounted'],
+    });
+    expect(v.verified).toBe(Verified.NO);
+    expect(v.verifiedReason).toBe(VerifiedReason.ASSERTION_FAILED);
+  });
+
+  it('a contradiction still outranks an unproved absence', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: true,
+      absenceUnobserved: ['3 closed-shadow-root'],
+      contradictions: [{ kind: 'signal-contradicted' }],
+    });
+    expect(v.verified).toBe(Verified.NO);
+    expect(v.verifiedReason).toBe(VerifiedReason.CONTRADICTED);
+  });
+
+  it('names the spots in the because sentence', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: true,
+      absenceUnobserved: ['21 virtualized-unmounted', '2 closed-shadow-root'],
+    });
+    expect(v.because).toContain('21 virtualized-unmounted');
+    expect(v.because).toContain('2 closed-shadow-root');
+  });
+});
+
 describe('precedence between competing faults', () => {
   it('reports the failed assertion first, as the most actionable fact', () => {
     const v = decideVerified({
@@ -336,6 +390,12 @@ describe('every verdict names the clause that decided it', () => {
       outcomeUnread: true,
     },
     [VerifiedReason.UNSETTLED]: { pass: true, honesty: clean(), settled: false },
+    [VerifiedReason.ABSENCE_UNPROVED]: {
+      pass: true,
+      honesty: clean(),
+      settled: true,
+      absenceUnobserved: ['21 virtualized-unmounted'],
+    },
     [VerifiedReason.PROVED]: { pass: true, honesty: clean(), settled: true },
   };
 
