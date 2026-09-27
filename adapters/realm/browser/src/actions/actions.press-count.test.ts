@@ -3,10 +3,7 @@ import { ActionType } from '@reticlehq/core';
 import { executeAction } from './actions.js';
 import { refs } from '@/dom/addressing/refs.js';
 
-function countOn(
-  target: EventTarget,
-  key: string,
-): { counts: number[]; cleanup: () => void } {
+function countOn(target: EventTarget, key: string): { counts: number[]; cleanup: () => void } {
   const counts: number[] = [];
   const handler = (e: Event): void => {
     if ((e as KeyboardEvent).key === key) counts.push(1);
@@ -33,8 +30,11 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
     const el = document.createElement('button');
     document.body.appendChild(el);
     const { counts, cleanup } = countOn(el, 'ArrowRight');
-    await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
-    cleanup();
+    try {
+      await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
+    } finally {
+      cleanup();
+    }
     expect(counts.length, 'element should see exactly 1 keydown').toBe(1);
   });
 
@@ -42,8 +42,11 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
     const el = document.createElement('button');
     document.body.appendChild(el);
     const { counts, cleanup } = countOn(document, 'ArrowRight');
-    await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
-    cleanup();
+    try {
+      await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
+    } finally {
+      cleanup();
+    }
     expect(counts.length, 'document should see exactly 1 keydown').toBe(1);
   });
 
@@ -51,8 +54,11 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
     const el = document.createElement('button');
     document.body.appendChild(el);
     const { counts, cleanup } = countOn(window, 'ArrowRight');
-    await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
-    cleanup();
+    try {
+      await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
+    } finally {
+      cleanup();
+    }
     expect(counts.length, 'window should see exactly 1 keydown').toBe(1);
   });
 
@@ -62,10 +68,13 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
     const onEl = countOn(el, 'ArrowRight');
     const onDoc = countOn(document, 'ArrowRight');
     const onWin = countOn(window, 'ArrowRight');
-    await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
-    onEl.cleanup();
-    onDoc.cleanup();
-    onWin.cleanup();
+    try {
+      await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
+    } finally {
+      onEl.cleanup();
+      onDoc.cleanup();
+      onWin.cleanup();
+    }
     expect(onEl.counts.length, 'element').toBe(1);
     expect(onDoc.counts.length, 'document').toBe(1);
     expect(onWin.counts.length, 'window').toBe(1);
@@ -79,8 +88,11 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
       if (e.key === 'ArrowRight') ups.push(1);
     };
     el.addEventListener('keyup', handler);
-    await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
-    el.removeEventListener('keyup', handler);
+    try {
+      await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'ArrowRight' });
+    } finally {
+      el.removeEventListener('keyup', handler);
+    }
     expect(ups.length, 'element should see exactly 1 keyup').toBe(1);
   });
 });
@@ -99,8 +111,11 @@ describe('refless document-key press dispatches exactly once (#1084)', () => {
     document.body.appendChild(input);
     input.focus();
     const { counts, cleanup } = countOn(input, 'Escape');
-    await executeAction('', ActionType.PRESS, { text: 'Escape' });
-    cleanup();
+    try {
+      await executeAction('', ActionType.PRESS, { text: 'Escape' });
+    } finally {
+      cleanup();
+    }
     expect(counts.length, 'focused input should see exactly 1 keydown').toBe(1);
   });
 
@@ -109,8 +124,11 @@ describe('refless document-key press dispatches exactly once (#1084)', () => {
     document.body.appendChild(input);
     input.focus();
     const { counts, cleanup } = countOn(document, 'Escape');
-    await executeAction('', ActionType.PRESS, { text: 'Escape' });
-    cleanup();
+    try {
+      await executeAction('', ActionType.PRESS, { text: 'Escape' });
+    } finally {
+      cleanup();
+    }
     expect(counts.length, 'document should see exactly 1 keydown').toBe(1);
   });
 });
