@@ -85,7 +85,7 @@ describe('press dispatches exactly one keydown per call (#1084)', () => {
     document.body.appendChild(el);
     const ups: number[] = [];
     const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'ArrowRight') ups.push(1);
+      if ('ArrowRight' === e.key) ups.push(1);
     };
     el.addEventListener('keyup', handler);
     try {
