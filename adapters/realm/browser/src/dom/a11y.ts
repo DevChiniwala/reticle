@@ -287,6 +287,7 @@ export function getStates(el: Element, visible: boolean = isVisible(el)): Elemen
   const checkedProp = isInput(el) && ('checkbox' === el.type || 'radio' === el.type) && el.checked;
   if (checkedProp || true === ariaBool(el, 'aria-checked')) states.push(ElementState.CHECKED);
   if (true === ariaBool(el, 'aria-expanded')) states.push(ElementState.EXPANDED);
+  if (true === ariaBool(el, 'aria-pressed')) states.push(ElementState.PRESSED);
   if (el.ownerDocument.activeElement === el) states.push(ElementState.FOCUSED);
 
   return states;

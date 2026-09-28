@@ -792,6 +792,7 @@ export const ElementState = {
   DISABLED: 'disabled',
   CHECKED: 'checked',
   EXPANDED: 'expanded',
+  PRESSED: 'pressed',
   FOCUSED: 'focused',
   PRESENT: 'present',
   /**
