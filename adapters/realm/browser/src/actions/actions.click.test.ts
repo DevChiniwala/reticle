@@ -177,3 +177,29 @@ describe('dblclick: the sequence a real double-click produces', () => {
     expect(r.effect.defaultPrevented).toBe(true);
   });
 });
+
+describe('click: SVG elements (#1122)', () => {
+  it('dispatches click on an SVG <a> instead of refusing it', async () => {
+    document.body.innerHTML = '<svg><a href="/rooms/3"><rect width="10" height="10"/></a></svg>';
+    const link = document.querySelector('svg a') as SVGElement;
+    const events: string[] = [];
+    link.addEventListener('click', () => {
+      events.push('click');
+    });
+    const r = await executeAction(refs.refFor(link), 'click');
+    expect(r.ok).toBe(true);
+    expect(events).toContain('click');
+  });
+
+  it('dispatches hover on an SVG <g> with a role', async () => {
+    document.body.innerHTML = '<svg><g role="button"><rect width="10" height="10"/></g></svg>';
+    const g = document.querySelector('g[role="button"]') as SVGElement;
+    const events: string[] = [];
+    g.addEventListener('mousemove', () => {
+      events.push('mousemove');
+    });
+    const r = await executeAction(refs.refFor(g), 'hover');
+    expect(r.ok).toBe(true);
+    expect(events).toContain('mousemove');
+  });
+});

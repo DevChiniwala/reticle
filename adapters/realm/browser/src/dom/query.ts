@@ -152,9 +152,16 @@ function resolveContainer(scope: string | undefined): {
   if (scope === undefined) return { container: document.body, scopeMissing: false };
   const byRef = refs.resolve(scope);
   if (isHtmlElement(byRef)) return { container: byRef, scopeMissing: false };
+  // SVG elements (e.g. <a href>, <g role="button">) are valid scope containers. querySelectorAll
+  // works on any Element, and the finder functions cast to HTMLElement[] — which is safe because
+  // describe/getRole/getStates accept Element.
+  if (byRef instanceof SVGElement)
+    return { container: byRef as unknown as HTMLElement, scopeMissing: false };
   try {
     const found = document.querySelector(scope);
     if (isHtmlElement(found)) return { container: found, scopeMissing: false };
+    if (found instanceof SVGElement)
+      return { container: found as unknown as HTMLElement, scopeMissing: false };
   } catch {
     // invalid selector - treat as a missing scope, never a whole-page search
   }

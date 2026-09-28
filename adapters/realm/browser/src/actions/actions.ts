@@ -134,8 +134,12 @@ function asString(value: unknown, fallback = ''): string {
 function requireElement(ref: string): HTMLElement {
   const el = refs.resolve(ref);
   if (null === el) throw new Error(`ref '${echoRef(ref)}' no longer resolves to an element`);
-  if (!isHtmlElement(el)) throw new Error(`ref '${echoRef(ref)}' is not an HTMLElement`);
-  return el;
+  if (isHtmlElement(el)) return el;
+  // SVGElement shares the event interface the action layer needs (focus, blur, tabIndex,
+  // dispatchEvent, getBoundingClientRect). Form-control actions (fill, type, select) still
+  // refuse it via their own isInput/isTextArea/isSelect guards.
+  if (el instanceof SVGElement) return el as unknown as HTMLElement;
+  throw new Error(`ref '${echoRef(ref)}' is not an interactive element`);
 }
 
 /** The element's stable anchor: testid (gold), else component/source (auto-anchor). */

@@ -1,0 +1,3 @@
+### Fixed
+
+- **`@reticlehq/browser` — SVG elements (e.g. `<a href>`, `<g role="button">`) could be looked at but not acted on.** `requireElement` rejected anything that was not an `HTMLElement`, so `click`, `hover`, `tap`, and `focus` refused an SVG ref with "is not an HTMLElement" while `look` listed it as a reachable link. The gate now accepts `SVGElement` for event-based actions; form-control actions (`fill`, `type`, `select`) still refuse it through their own type guards. `resolveContainer` accepts SVG scope refs the same way. Closes [#1122](https://github.com/reticlehq/reticle/issues/1122).
