@@ -208,9 +208,14 @@ export async function evalElement(
   if (state !== undefined) {
     const relaxed = await matchOnce(session, query, undefined);
     if (relaxed.matched) {
+      const ariaHint = match.hint?.ariaHiddenMatch;
+      const ariaNote =
+        ariaHint !== undefined
+          ? ' — text is inside an aria-hidden subtree (drawn on screen, but removed from the accessibility tree)'
+          : '';
       return {
         pass: false,
-        failureReason: `element exists but not in state '${state}'`,
+        failureReason: `element exists but not in state '${state}'${ariaNote}`,
         observed: `element matching ${subject} is present, states: ${
           relaxed.elements[0]?.states.join(', ') ?? 'unknown'
         }`,
@@ -249,7 +254,12 @@ export async function evalElement(
   // element that never rendered. Naming the container is the difference between a retry and a bug
   // report against working code. See split-text-miss.ts.
   const splitText = describeSplitTextMiss(match.hint?.splitText, query.text);
-  const clause = splitText ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
+  const ariaHidden =
+    match.hint?.ariaHiddenMatch !== undefined
+      ? 'text is inside an aria-hidden subtree (drawn on screen, but removed from the accessibility tree)'
+      : undefined;
+  const clause =
+    splitText ?? ariaHidden ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
   const suffix = clause === undefined ? '' : ` — ${clause}`;
   // The evidence list is capped in document order, so a region low on the page is exactly what it
   // drops. Handed back with no marker it reads as the whole page, and the field report this came

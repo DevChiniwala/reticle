@@ -384,6 +384,37 @@ export function isVisible(el: Element, memo?: Map<Element, boolean>): boolean {
   return result;
 }
 
+/**
+ * True when the element is invisible SOLELY because `aria-hidden="true"` is set on it or an
+ * ancestor — no CSS `display:none`, `visibility:hidden`, `opacity:0`, or `[hidden]` attribute.
+ *
+ * Precondition: `isVisible(el)` is `false`. Without that, the walk is wasted — the element is
+ * visible and the caller should not be asking why it is hidden. The function still returns a
+ * correct `false` in that case (it reaches the root without finding a hidden cause), but callers
+ * should guard the call.
+ */
+export function isHiddenByAriaOnly(el: Element): boolean {
+  let current: Element | null = el;
+  while (current !== null) {
+    if ('true' === current.getAttribute('aria-hidden')) return true;
+    if (isHtmlElement(current) && current.hidden) return false;
+    const view = current.ownerDocument.defaultView;
+    if (view !== null) {
+      const style = view.getComputedStyle(current);
+      if (
+        'none' === style.display ||
+        'hidden' === style.visibility ||
+        'collapse' === style.visibility
+      ) {
+        return false;
+      }
+      if (0 === Number.parseFloat(style.opacity || '1')) return false;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
 const MAX_TEXT = 80;
 
 function getVisibleText(el: Element): string {

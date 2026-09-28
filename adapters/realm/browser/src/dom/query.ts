@@ -18,6 +18,7 @@ import {
   getRole,
   describe,
   getStates,
+  isHiddenByAriaOnly,
   isInViewport,
   isVisible,
 } from './a11y.js';
@@ -732,6 +733,11 @@ function buildEmptyHint(query: ElementQuery): QueryEmptyHint {
   }
   const near = nameNearMisses(container, query);
   if (near.length > 0) hint.nameNearMiss = near;
+  if (wanted !== undefined && hint.splitText === undefined) {
+    const textCandidates = queryByText(container, wanted);
+    const ariaHidden = textCandidates.find((el) => !isVisible(el) && isHiddenByAriaOnly(el));
+    if (ariaHidden !== undefined) hint.ariaHiddenMatch = describe(ariaHidden);
+  }
   return hint;
 }
 
