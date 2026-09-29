@@ -95,3 +95,21 @@ describe('a scope root that satisfies a predicate is still findable by it', () =
     expect(runQuery({ scope: '#todos', by: QueryBy.ROLE, value: 'list' }).count).toBe(1);
   });
 });
+
+describe('SVG element as scope (#1122)', () => {
+  beforeEach(() => {
+    document.body.innerHTML =
+      '<svg id="chart"><g role="button" aria-label="Bar"><rect width="10" height="10"/></g></svg>';
+  });
+
+  it('accepts an SVG element resolved by CSS selector as a scope container', () => {
+    const result = runQuery({ scope: '#chart', by: QueryBy.ROLE, value: 'button' });
+    expect(result.count).toBe(1);
+    expect(result.scopeMissing).toBeUndefined();
+  });
+
+  it('does not treat an SVG scope as missing', () => {
+    const result = runQuery({ scope: 'svg', by: QueryBy.ROLE, value: 'button' });
+    expect(result.scopeMissing).toBeUndefined();
+  });
+});

@@ -16,7 +16,7 @@ import {
 import { assertEditable, assertNotRichText, setNativeValue } from './value-input.js';
 import { getAccessibleName, getRole, isVisible, getStates } from '@/dom/a11y.js';
 import { elementHasHoverHandlers, identifyComponent } from '@/registry/stores/adapters.js';
-import { isForm, isHtmlElement, isInput, isSelect, isTextArea } from '@/dom/realm.js';
+import { isForm, isHtmlElement, isInput, isSelect, isSvgElement, isTextArea } from '@/dom/realm.js';
 import { nativeSetTimeout, settle } from '@/timers/native/native-timers.js';
 import { AppearedText } from './appeared-text.js';
 import {
@@ -138,8 +138,8 @@ function requireElement(ref: string): HTMLElement {
   // SVGElement shares the event interface the action layer needs (focus, blur, tabIndex,
   // dispatchEvent, getBoundingClientRect). Form-control actions (fill, type, select) still
   // refuse it via their own isInput/isTextArea/isSelect guards.
-  if (el instanceof SVGElement) return el as unknown as HTMLElement;
-  throw new Error(`ref '${echoRef(ref)}' is not an interactive element`);
+  if (isSvgElement(el)) return el as unknown as HTMLElement;
+  throw new Error(`ref '${echoRef(ref)}' is not an HTMLElement`);
 }
 
 /** The element's stable anchor: testid (gold), else component/source (auto-anchor). */

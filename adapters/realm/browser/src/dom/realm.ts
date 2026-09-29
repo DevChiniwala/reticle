@@ -87,6 +87,9 @@ export const isForm = (n: unknown): n is HTMLFormElement =>
     'undefined' === typeof HTMLFormElement ? undefined : HTMLFormElement,
   );
 
+export const isSvgElement = (n: unknown): n is SVGElement =>
+  isIn<SVGElement>(n, 'SVGElement', 'undefined' === typeof SVGElement ? undefined : SVGElement);
+
 export const isFrame = (n: unknown): n is HTMLIFrameElement =>
   isIn<HTMLIFrameElement>(
     n,
