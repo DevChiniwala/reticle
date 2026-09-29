@@ -107,4 +107,18 @@ describe('ariaHiddenMatch hint names the accessibility exclusion (#1070)', () =>
     const r = matchQuery({ text: 'F' }, 'visible');
     expect(r.hint?.ariaHiddenMatch).toBeUndefined();
   });
+
+  it('stays silent when CSS also hides an ancestor above the aria-hidden node', () => {
+    document.body.innerHTML =
+      '<div style="display: none"><svg aria-hidden="true"><text>F</text></svg></div>';
+    const r = matchQuery({ text: 'F' }, 'visible');
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+
+  it('stays silent when the state filter is not visibility-related', () => {
+    document.body.innerHTML =
+      '<div data-slot="app-card-logo">' + '<svg aria-hidden="true"><text>F</text></svg>' + '</div>';
+    const r = matchQuery({ text: 'F' }, 'checked');
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
 });

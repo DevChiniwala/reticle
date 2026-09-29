@@ -327,9 +327,8 @@ export function getValue(el: Element): string | undefined {
   return valueNow ?? undefined;
 }
 
-/** Whether the element's OWN box hides it — one forced-style resolution, no ancestor walk. */
-function selfHidden(el: Element): boolean {
-  if ('true' === el.getAttribute('aria-hidden')) return true;
+/** Whether the element's OWN box is hidden by CSS or the HTML `hidden` attribute — NOT aria-hidden. */
+function cssHidden(el: Element): boolean {
   if (isHtmlElement(el) && el.hidden) return true;
   const view = el.ownerDocument.defaultView;
   if (view !== null) {
@@ -344,6 +343,12 @@ function selfHidden(el: Element): boolean {
     if (0 === Number.parseFloat(style.opacity || '1')) return true;
   }
   return false;
+}
+
+/** Whether the element's OWN box hides it — one forced-style resolution, no ancestor walk. */
+function selfHidden(el: Element): boolean {
+  if ('true' === el.getAttribute('aria-hidden')) return true;
+  return cssHidden(el);
 }
 
 /**
@@ -386,7 +391,12 @@ export function isVisible(el: Element, memo?: Map<Element, boolean>): boolean {
 
 /**
  * True when the element is invisible SOLELY because `aria-hidden="true"` is set on it or an
- * ancestor — no CSS `display:none`, `visibility:hidden`, `opacity:0`, or `[hidden]` attribute.
+ * ancestor — no CSS `display:none`, `visibility:hidden`, `opacity:0`, or `[hidden]` attribute
+ * anywhere in the chain.
+ *
+ * Walks the ENTIRE ancestor chain: an `aria-hidden` found first does not short-circuit, because
+ * an ancestor further up may also be CSS-hidden (`<div style="display:none"><svg aria-hidden>`)
+ * and the element is not "drawn on screen" in that case.
  *
  * Precondition: `isVisible(el)` is `false`. Without that, the walk is wasted — the element is
  * visible and the caller should not be asking why it is hidden. The function still returns a
@@ -394,25 +404,14 @@ export function isVisible(el: Element, memo?: Map<Element, boolean>): boolean {
  * should guard the call.
  */
 export function isHiddenByAriaOnly(el: Element): boolean {
+  let foundAriaHidden = false;
   let current: Element | null = el;
   while (current !== null) {
-    if ('true' === current.getAttribute('aria-hidden')) return true;
-    if (isHtmlElement(current) && current.hidden) return false;
-    const view = current.ownerDocument.defaultView;
-    if (view !== null) {
-      const style = view.getComputedStyle(current);
-      if (
-        'none' === style.display ||
-        'hidden' === style.visibility ||
-        'collapse' === style.visibility
-      ) {
-        return false;
-      }
-      if (0 === Number.parseFloat(style.opacity || '1')) return false;
-    }
+    if ('true' === current.getAttribute('aria-hidden')) foundAriaHidden = true;
+    if (cssHidden(current)) return false;
     current = current.parentElement;
   }
-  return false;
+  return foundAriaHidden;
 }
 
 const MAX_TEXT = 80;
