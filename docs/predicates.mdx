@@ -48,7 +48,7 @@ Take the advice. `element` and `text` are convenient and weak; `signal`, `state`
 }
 ```
 
-`query` accepts `role`, `name`, `text`, `label`, `placeholder`, `testid`, `alt`, `value`, `by`, `component`, `source`, `scope`, `self`, `attrs`. `state` is one of `visible`, `hidden`, `enabled`, `disabled`, `checked`, `expanded`, `focused`, `inViewport`, `present`.
+`query` accepts `role`, `name`, `text`, `label`, `placeholder`, `testid`, `alt`, `value`, `by`, `component`, `source`, `scope`, `self`, `attrs`. `state` is one of `visible`, `hidden`, `enabled`, `disabled`, `checked`, `expanded`, `pressed`, `focused`, `inViewport`, `present`.
 
 `value` is the one worth knowing about. `{ "role": "textbox", "name": "Amount" }` collapses to "a textbox called Amount exists", which passes against an empty field; adding `value` is what makes it an assertion about what the user will actually send. `by` selects the locator strategy explicitly, `component` and `source` match React component identity and source location, and `self` restricts a scoped match to the scope element itself rather than its descendants.
 
