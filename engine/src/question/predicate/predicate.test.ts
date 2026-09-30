@@ -959,6 +959,73 @@ describe('a throttled tab timeout is not a missing render', () => {
     expect(result.failureReason).toContain('split across the children');
   });
 
+  it('present testids prove the page rendered, despite throttling (#1253)', async () => {
+    const session = new ThrottledSession([], () => ({
+      matched: false,
+      count: 0,
+      elements: [],
+      hint: {
+        route: '/',
+        presentTestids: ['submit-btn', 'email-input'],
+        presentRegions: [],
+        knownEmptyState: false,
+      },
+    }));
+    const result = await evaluatePredicate(session, {
+      kind: 'element',
+      query: { text: 'Checkout' },
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+  });
+
+  it('a role+name near-miss proves the page rendered, despite throttling (#1253)', async () => {
+    let call = 0;
+    const session = new (class extends ThrottledSession {
+      override command(
+        name: string,
+        args: Record<string, unknown> = {},
+      ): Promise<CommandResult> {
+        if (ReticleCommand.MATCH !== name) {
+          return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+        }
+        call += 1;
+        if (1 === call) {
+          return Promise.resolve({
+            kind: 'command_result',
+            id: 'x',
+            ok: true,
+            result: { matched: false, count: 0, elements: [] },
+          });
+        }
+        return Promise.resolve({
+          kind: 'command_result',
+          id: 'x',
+          ok: true,
+          result: {
+            matched: true,
+            count: 1,
+            elements: [
+              {
+                ref: asRef('e1'),
+                role: 'button',
+                name: 'Checkout (2 items)',
+                states: ['present', 'visible', 'enabled'],
+                visible: true,
+              },
+            ],
+          },
+        });
+      }
+    })([]);
+    const result = await evaluatePredicate(session, {
+      kind: 'element',
+      query: { role: 'button', name: 'Checkout' },
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+  });
+
   it('an unthrottled timeout still looks like a near-miss, not a starved tab', async () => {
     const session = new FakeSession([]);
     const result = await waitForPredicate(

@@ -99,22 +99,30 @@ function annotateThrottledMiss(
   if (true !== session.throttled?.()) return result;
   if (decidedByAnAlreadyAnnotatedClause(predicate)) return result;
   if (failureRestsOnSeeing(predicate)) return result;
-  if (foundTextSplitAcrossChildren(result)) return result;
+  if (evidenceProvesPageRendered(result)) return result;
   return { ...result, inconclusive: THROTTLED_STARVED_NOTE };
 }
 
 /**
- * Did the miss come with proof that the page rendered the very string it was looking for?
+ * Did the miss come with proof that the page rendered?
  *
- * The starved-tab caveat is for a page that may not have painted. A text miss that carries a
- * split-text owner is the browser saying the string IS in the rendered page, split across one
- * container's children — so the tab ran, and the failure is the locator's. Reported from Next's
- * template: the throttle note led a response whose own near-miss named the heading holding the text,
- * and the agent was sent to wait out a starvation that had not happened.
+ * The starved-tab caveat is for a page that may not have painted. Evidence that the page IS alive
+ * means the miss is real, not an artefact of throttling.
+ *
+ * - `splitText`: the browser found the string in the rendered page, split across children.
+ * - `nearMiss`: the element exists (just wrong state or name) — the DOM painted.
+ * - `presentTestids`: testids are on the page — it rendered enough for the SDK to stamp them.
  */
-function foundTextSplitAcrossChildren(result: EvalResult): boolean {
+function evidenceProvesPageRendered(result: EvalResult): boolean {
   const evidence = result.evidence;
-  return 'object' === typeof evidence && null !== evidence && 'splitText' in evidence;
+  if ('object' !== typeof evidence || null === evidence) return false;
+  if ('splitText' in evidence) return true;
+  if ('nearMiss' in evidence) return true;
+  if ('presentTestids' in evidence) {
+    const ids = (evidence as { presentTestids: unknown }).presentTestids;
+    return Array.isArray(ids) && ids.length > 0;
+  }
+  return false;
 }
 
 /**
