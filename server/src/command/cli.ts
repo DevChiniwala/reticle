@@ -191,15 +191,14 @@ import { handleServe, handleStop, handleRestart } from './cli/lifecycle/daemon-l
 import { statusLines } from './cli/status/status-lines.js';
 
 /**
- * Log the status event AND print it for a person.
- *
- * Both, not either: the JSON line is documented and is what a log is for, and the block is for
- * whoever is reading the terminal — which, once an agent is running the command, is somebody who
- * did not type it and cannot be assumed to parse it.
+ * Report status to the terminal. `--json` writes one structured line to STDOUT so it can be piped
+ * into `jq`; the human-readable block goes to stdout too. `log()` stays on stderr (the MCP
+ * transport lives on stdout), so `--json` must not go through it.
  */
-function reportStatus(fields: Record<string, unknown>, json: boolean): void {
+export function reportStatus(fields: Record<string, unknown>, json: boolean): void {
   if (json) {
-    log('reticle_status', fields);
+    const line = JSON.stringify({ t: new Date().toISOString(), event: 'reticle_status', ...fields });
+    process.stdout.write(`${line}\n`);
     return;
   }
   process.stdout.write(`${statusLines(fields).join('\n')}\n`);
