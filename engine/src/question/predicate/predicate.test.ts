@@ -982,7 +982,7 @@ describe('a throttled tab timeout is not a missing render', () => {
   it('a role+name near-miss proves the page rendered, despite throttling (#1253)', async () => {
     let call = 0;
     const session = new (class extends ThrottledSession {
-      override command(name: string, args: Record<string, unknown> = {}): Promise<CommandResult> {
+      override command(name: string, _args: Record<string, unknown> = {}): Promise<CommandResult> {
         if (ReticleCommand.MATCH !== name) {
           return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
         }
