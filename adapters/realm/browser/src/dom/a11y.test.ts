@@ -424,6 +424,30 @@ describe('the labels read is scoped to labelable elements', () => {
   });
 });
 
+describe('adjacent text nodes do not get spurious spaces (#1254)', () => {
+  it('concatenates adjacent text nodes without inserting spaces', () => {
+    const button = document.createElement('button');
+    button.append('Complete All (', '2', ')');
+    expect(getAccessibleName(button)).toBe('Complete All (2)');
+  });
+
+  it('still separates an image alt from adjacent text', () => {
+    const button = document.createElement('button');
+    const img = document.createElement('img');
+    img.setAttribute('alt', 'Close');
+    button.append(img, 'Dialog');
+    expect(getAccessibleName(button)).toBe('Close Dialog');
+  });
+
+  it('separates text around an inline element', () => {
+    const button = document.createElement('button');
+    const em = document.createElement('em');
+    em.textContent = 'bold';
+    button.append('Make ', em, ' text');
+    expect(getAccessibleName(button)).toBe('Make bold text');
+  });
+});
+
 describe('fieldset named by its legend', () => {
   it('names a fieldset from its direct-child legend', () => {
     const fieldset = document.createElement('fieldset');

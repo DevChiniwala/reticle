@@ -224,12 +224,17 @@ function textWithoutHidden(node: Node): string {
     const alt = el.getAttribute('alt');
     return null === alt ? '' : alt;
   }
-  const parts: string[] = [];
+  let result = '';
+  let lastWasElement = false;
   for (const child of el.childNodes) {
     const piece = textWithoutHidden(child);
-    if (piece.length > 0) parts.push(piece);
+    if (0 === piece.length) continue;
+    const isEl = Node.ELEMENT_NODE === child.nodeType;
+    if (result.length > 0 && (isEl || lastWasElement)) result += ' ';
+    result += piece;
+    lastWasElement = isEl;
   }
-  return parts.join(' ');
+  return result;
 }
 
 export function getAccessibleName(el: Element): string {
