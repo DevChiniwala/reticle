@@ -79,6 +79,18 @@ describe('isInViewport (#398)', () => {
     expect(inView.count).toBe(1);
   });
 
+  it('stamps inViewport on a single match when the predicate asks for that state (#1279)', () => {
+    const btn = boxed(
+      { top: 100, left: 100, bottom: 140, right: 200, width: 100, height: 40 },
+      'button',
+    );
+    btn.textContent = 'Submit';
+
+    const result = matchQuery({ role: 'button', name: 'Submit' }, ElementState.IN_VIEWPORT);
+    expect(result.count).toBe(1);
+    expect(result.elements[0]?.states).toContain(ElementState.IN_VIEWPORT);
+  });
+
   it('stamps inViewport onto multi-match descriptors so ambiguity can be ranked (#886)', () => {
     const onScreen = boxed(
       { top: 100, left: 100, bottom: 140, right: 200, width: 100, height: 40 },
