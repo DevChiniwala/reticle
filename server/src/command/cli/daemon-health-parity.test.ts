@@ -27,15 +27,11 @@ it('doctor and status both report stopped when a live recorded pid has no daemon
   const stateHome = mkdtempSync(join(tmpdir(), 'reticle-health-parity-'));
   const previousStateHome = process.env[STATE_DIR_ENV];
   let doctorOutput = '';
-  let statusOutput = '';
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown): boolean => {
     doctorOutput += String(chunk);
     return true;
   });
-  const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown): boolean => {
-    statusOutput += String(chunk);
-    return true;
-  });
+  const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
   try {
     process.env[STATE_DIR_ENV] = stateHome;

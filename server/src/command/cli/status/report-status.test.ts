@@ -32,7 +32,9 @@ describe('reportStatus --json writes to stdout, not stderr (#1277)', () => {
     expect(stdoutBuf).toContain('"running":true');
     const lines = stdoutBuf.trim().split('\n');
     expect(lines).toHaveLength(1);
-    expect(() => JSON.parse(lines[0] ?? '')).not.toThrow();
+    expect(() => {
+      JSON.parse(lines[0] ?? '');
+    }).not.toThrow();
   });
 
   it('does not write JSON to stderr', () => {
