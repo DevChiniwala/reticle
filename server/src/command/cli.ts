@@ -197,7 +197,11 @@ import { statusLines } from './cli/status/status-lines.js';
  */
 export function reportStatus(fields: Record<string, unknown>, json: boolean): void {
   if (json) {
-    const line = JSON.stringify({ t: new Date().toISOString(), event: 'reticle_status', ...fields });
+    const line = JSON.stringify({
+      t: new Date().toISOString(),
+      event: 'reticle_status',
+      ...fields,
+    });
     process.stdout.write(`${line}\n`);
     return;
   }
