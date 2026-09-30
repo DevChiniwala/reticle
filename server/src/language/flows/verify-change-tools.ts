@@ -311,6 +311,7 @@ async function inspectAfterReplay(
       currentEditEpoch: session.currentEditEpoch,
       appOrigin: session.url,
       background: session.background,
+      namedNetUrls: [],
       // The replay is the action, and the cursor is where it started.
       actionSince: cursor,
     }) as { kind: string }[];

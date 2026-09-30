@@ -743,6 +743,7 @@ export const ACT_TOOLS: ToolDef[] = [
           prior,
           actionSince: since,
           expectedFailures: declared.netFailures,
+          namedNetUrls: declared.netUrls,
           // A consequence that was already true before the action proves nothing about it, so it is
           // not evidence the destination rendered either — `alreadyTrue` decides that, once.
           renderProved: verdict.pass && !alreadyTrue && declared.rendersContent,
