@@ -119,7 +119,7 @@ function evidenceProvesPageRendered(result: EvalResult): boolean {
   if ('splitText' in evidence) return true;
   if ('nearMiss' in evidence) return true;
   if ('presentTestids' in evidence) {
-    const ids = (evidence as { presentTestids: unknown }).presentTestids;
+    const ids = evidence.presentTestids;
     return Array.isArray(ids) && ids.length > 0;
   }
   return false;
