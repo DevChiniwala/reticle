@@ -45,7 +45,7 @@ it('doctor and status both report stopped when a live recorded pid has no daemon
     // Then again in its default shape, which is what a person actually reads. Both, because the
     // parity that matters is no longer only between two payloads: doctor and status now print the
     // same daemon row, and a reader comparing them must not be told two different things.
-    const jsonOnly = statusOutput;
+    const jsonOnly = doctorOutput;
     await handleStatus(port);
     await handleDoctor(port);
 
