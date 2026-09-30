@@ -129,6 +129,23 @@ describe('withReticle', () => {
     expect(out.module.rules).toHaveLength(0);
     expect(sawUserHook).toBe(true);
   });
+
+  it('installs no Turbopack loader when sourceMapping is off (#1248)', () => {
+    process.env.NODE_ENV = 'development';
+    const config = withReticle({}, { sourceMapping: false });
+    const rules = config.turbopack?.rules ?? {};
+    expect(rules['*.tsx']).toBeUndefined();
+    expect(rules['*.jsx']).toBeUndefined();
+  });
+
+  it('preserves user Turbopack config when sourceMapping is off (#1248)', () => {
+    process.env.NODE_ENV = 'development';
+    const config = withReticle(
+      { turbopack: { resolveAlias: { '@app': './src' } } },
+      { sourceMapping: false },
+    );
+    expect(config.turbopack?.resolveAlias).toEqual({ '@app': './src' });
+  });
 });
 
 /**

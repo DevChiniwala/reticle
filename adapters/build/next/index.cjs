@@ -429,7 +429,14 @@ function withReticle(nextConfig = {}, options = {}) {
   return {
     ...nextConfig,
     ...(allowedDevOrigins !== undefined ? { allowedDevOrigins } : {}),
-    ...(supportsTurbopackKey() ? { turbopack: turbopackConfig(nextConfig.turbopack) } : {}),
+    ...(supportsTurbopackKey()
+      ? {
+          turbopack:
+            options.sourceMapping !== false
+              ? turbopackConfig(nextConfig.turbopack)
+              : (nextConfig.turbopack ?? {}),
+        }
+      : {}),
     // Expose the token to the client bundle as process.env.NEXT_PUBLIC_RETICLE_TOKEN (Next's convention
     // for client-readable env), so a dev-only client connect can present it. Minted here if the file
     // is missing: Next evaluates this once, so an empty value is frozen and a reload cannot pick a
