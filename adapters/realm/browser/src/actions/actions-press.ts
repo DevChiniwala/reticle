@@ -4,7 +4,7 @@ import { nativeSetTimeout } from '@/timers/native/native-timers.js';
 
 /** Native, so a page that patched setTimeout cannot stretch or stall a hold. */
 const sleep = (ms: number): Promise<void> => new Promise((r) => nativeSetTimeout(r, ms));
-import { isHtmlElement } from '@/dom/realm.js';
+import { type ActionTarget, isHtmlElement } from '@/dom/realm.js';
 
 function asString(value: unknown, fallback = ''): string {
   return 'string' === typeof value ? value : fallback;
@@ -155,7 +155,7 @@ const KEY_REPEAT_DELAY_MS = 500;
  * reports a gesture that visibly did not happen.
  */
 export async function holdKey(
-  el: HTMLElement,
+  el: ActionTarget,
   key: string,
   code: string,
   mods: Record<string, boolean>,
@@ -182,7 +182,7 @@ export async function holdKey(
 
 /** Press several keys together and release them in reverse, optionally holding at full depth. */
 export async function pressCombo(
-  el: HTMLElement,
+  el: ActionTarget,
   keys: readonly string[],
   mods: Record<string, boolean>,
   holdMs: number,
@@ -206,11 +206,3 @@ export async function pressCombo(
   }
   return prevented;
 }
-
-/**
- * Why an in-page zoom is refused. Exported so the server and the SDK say the identical sentence.
- */
-export const ZOOM_NEEDS_REAL_BROWSER_MSG =
-  'cannot zoom from inside the page — CSS zoom changes how it LOOKS without changing the layout ' +
-  'viewport, visualViewport or media queries, so a layout that breaks at 200% would be reported as ' +
-  'checked and passing. Drive a real browser (reticle drive <url>, or reticle_lease) and zoom there.';

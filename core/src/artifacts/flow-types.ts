@@ -8,6 +8,7 @@ import { CONSEQUENCE_KINDS, PRESENCE_GRADED } from '@/verdict/consequence.js';
 import { PredicateKind } from '@/verdict/consequence.js';
 import { PredicateSchema, type Predicate } from '@/verdict/predicate.js';
 import { sessionBoundField, sessionRefRefusal } from '@/verdict/predicate-tree.js';
+import { isConsequenceSource } from '@/verdict/compare-source.js';
 import { FlowExpectSchema, flowExpectToPredicate } from './flow-expect-flat.js';
 
 // The older flat shape and its reader live together; both are re-exported so the one public name
@@ -177,6 +178,10 @@ export interface FlowStep {
    * `timeout_ms`, so a recorded step can carry one too.
    */
   timeoutMs?: number;
+  /** The page (route pathname) this step ran on, recorded at capture. */
+  page?: string;
+  /** The page it ended on once its action settled — where it led, when that differs from `page`. */
+  endPage?: string;
   /** sub-steps for an act_sequence, each independently anchored. */
   steps?: FlowStep[];
   /**
@@ -226,6 +231,9 @@ const baseFlowStep = z.object({
   degraded: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
   invoke: z.string().min(1).optional(),
+  /** See FlowStep.page / FlowStep.endPage. */
+  page: z.string().optional(),
+  endPage: z.string().optional(),
 });
 
 export const FlowStepSchema: z.ZodType<FlowStep> = baseFlowStep.extend({
@@ -322,6 +330,8 @@ export interface FlowStepResult {
    * fake session with no route events). Lets a replay result read as a page-by-page journey.
    */
   page?: string;
+  /** The route the page was on once this step settled — where it led. Absent when unobservable. */
+  endPage?: string;
   /**
    * A compact summary of the observable CONSEQUENCE in the window right after this step ran — the
    * "what happened" of the journey: a route change, a domain signal (e.g. a modal opening), a
@@ -672,6 +682,14 @@ export const FlowFileSchema = z.object({
    */
   requires: ExpectListSchema.optional(),
   ensures: ExpectListSchema.optional(),
+  /**
+   * Who made this flow, stamped at save: the agent that drove it (its MCP client name) and the
+   * person signed in to the cloud key on that machine. Either is absent when it was not known —
+   * never guessed.
+   */
+  author: z
+    .object({ agent: z.string().min(1).optional(), person: z.string().min(1).optional() })
+    .optional(),
   /** From the injected clock (ms) — deterministic in tests, byte-stable on disk. */
   createdAt: z.number(),
   steps: z.array(FlowStepSchema),
@@ -903,7 +921,12 @@ export function staleKnownBugs(
 
 /** True when a FlowExpect asserts at least one consequence (any of the ConsequenceKind fields set). */
 export function flowExpectHasConsequence(expect: Predicate | undefined): boolean {
-  return expectClauses(expect).some((clause) => CONSEQUENCE_KINDS.has(clause.kind));
+  return expectClauses(expect).some(
+    (clause) =>
+      CONSEQUENCE_KINDS.has(clause.kind) ||
+      (PredicateKind.COMPARE === clause.kind &&
+        (isConsequenceSource(clause.left) || isConsequenceSource(clause.right))),
+  );
 }
 
 /**
@@ -924,7 +947,10 @@ export function flowExpectHasConsequence(expect: Predicate | undefined): boolean
  */
 export function flowExpectIsPresenceOnly(expect: Predicate | undefined): boolean {
   if (expect === undefined || flowExpectHasConsequence(expect)) return false;
-  return expectClauses(expect).some((clause) => PRESENCE_GRADED.has(clause.kind));
+  // A `compare` reaching here reads text on both sides, which is two readings of the same DOM.
+  return expectClauses(expect).some(
+    (clause) => PRESENCE_GRADED.has(clause.kind) || PredicateKind.COMPARE === clause.kind,
+  );
 }
 
 /**

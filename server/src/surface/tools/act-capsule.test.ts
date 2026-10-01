@@ -11,7 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { join, sep } from 'node:path';
-import { saveFailedAssertCapsule } from './act-capsule.js';
+import { describeExpected, saveFailedAssertCapsule } from './act-capsule.js';
 import type { ToolDeps } from './tool-kit.js';
 
 // Host-native, because the assertions below are `startsWith` over paths the callee builds with
@@ -229,5 +229,27 @@ describe('where a failed-assert capsule is filed', () => {
     } as unknown as ToolDeps;
 
     await expect(saveFailedAssertCapsule({ deps, ...failing })).resolves.not.toThrow();
+  });
+});
+
+describe('describeExpected: what a failed act claimed, in words', () => {
+  it('names the route, the request, the element and the text a claim expected', () => {
+    expect(describeExpected({ kind: 'route', pathname: '/settings' })).toBe('route /settings');
+    expect(
+      describeExpected({ kind: 'net', method: 'POST', urlContains: '/v1/pay', status: 200 }),
+    ).toBe('POST /v1/pay → 200');
+    expect(
+      describeExpected({
+        kind: 'allOf',
+        predicates: [
+          { kind: 'route', pathname: '/issues' },
+          { kind: 'element', query: { by: 'role', value: 'heading', name: 'Issues' } },
+        ],
+      }),
+    ).toBe('route /issues AND element "Issues"');
+    expect(describeExpected({ kind: 'text', contains: 'Saved', absent: true })).toBe(
+      'no text "Saved"',
+    );
+    expect(describeExpected(undefined)).toBeUndefined();
   });
 });

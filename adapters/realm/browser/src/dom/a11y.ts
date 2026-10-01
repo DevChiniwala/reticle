@@ -1,9 +1,25 @@
 import { ElementState, REDACTED_VALUE, type ElementDescriptor } from '@reticlehq/core';
-import { isButton, isHtmlElement, isImage, isInput, isSelect, isTextArea } from './realm.js';
+import {
+  isButton,
+  isHtmlElement,
+  isImage,
+  isInput,
+  isMeter,
+  isOutput,
+  isProgress,
+  isSelect,
+  isTextArea,
+} from './realm.js';
 import { refs } from './addressing/refs.js';
+import { capturedRootOf } from './shadow-registry.js';
 import { inspectChart } from './chart.js';
 import { isSensitiveKey } from '@/security/serialization.js';
 import { formatSource, sourceFromDom } from './addressing/source.js';
+
+const HTML_DETAILS_TAG = 'details';
+const HTML_DETAILS_OPEN_ATTRIBUTE = 'open';
+// `localName`, not `tagName`: an XHTML document keeps `tagName` lowercase, an HTML one uppercases it.
+const HTML_SUMMARY_TAG = 'summary';
 
 /**
  * Roles whose accessible name comes from their text content (ARIA's `nameFrom: author content`).
@@ -208,12 +224,17 @@ function textWithoutHidden(node: Node): string {
     const alt = el.getAttribute('alt');
     return null === alt ? '' : alt;
   }
-  const parts: string[] = [];
+  let result = '';
+  let lastWasElement = false;
   for (const child of el.childNodes) {
     const piece = textWithoutHidden(child);
-    if (piece.length > 0) parts.push(piece);
+    if (0 === piece.length) continue;
+    const isEl = Node.ELEMENT_NODE === child.nodeType;
+    if (result.length > 0 && (isEl || lastWasElement)) result += ' ';
+    result += piece;
+    lastWasElement = isEl;
   }
-  return parts.join(' ');
+  return result;
 }
 
 export function getAccessibleName(el: Element): string {
@@ -228,7 +249,25 @@ export function getAccessibleName(el: Element): string {
     if (alt !== null) return alt.trim();
   }
 
-  if (isInput(el) || isTextArea(el) || isSelect(el)) {
+  // `.labels` exists on every labelable element (input, textarea, select, button, meter, output,
+  // progress) per the HTML spec, not only the three handled below, so this read must not be gated
+  // on `isInput/isTextArea/isSelect` alone: a `<button role="combobox">` (or `<meter>`/`<output>`)
+  // with a native `<label for>` was falling through to its own text content or NAME_FROM_CONTENT,
+  // and a `by: role` + name lookup for it found nothing.
+  //
+  // It must still be gated on THAT full labelable set, and not read unconditionally: this function
+  // runs over every element a snapshot walks, including custom elements an app defines with its own
+  // `labels` property for its own purposes, so touching `.labels` on a non-labelable element risks a
+  // hostile getter or a value that isn't a NodeList.
+  const isLabelable =
+    isInput(el) ||
+    isTextArea(el) ||
+    isSelect(el) ||
+    isButton(el) ||
+    isMeter(el) ||
+    isOutput(el) ||
+    isProgress(el);
+  if (isLabelable) {
     const labels = el.labels;
     if (labels !== null && labels.length > 0) {
       const text = [...labels]
@@ -237,6 +276,17 @@ export function getAccessibleName(el: Element): string {
         .trim();
       if (text.length > 0) return text;
     }
+  }
+
+  if ('fieldset' === el.tagName.toLowerCase()) {
+    const legend = [...el.children].find((child) => 'legend' === child.tagName.toLowerCase());
+    if (legend !== undefined) {
+      const text = collapse(textWithoutHidden(legend));
+      if (text.length > 0) return text;
+    }
+  }
+
+  if (isInput(el) || isTextArea(el) || isSelect(el)) {
     // Submit-like inputs carry their name on `value`, exactly where the visible caption comes
     // from: `<input type="submit" value="Send">` renders a button reading Send. Without this the
     // descriptor printed `button ""` while `by: text` found the very same input by "Send", so the
@@ -287,6 +337,7 @@ export function getStates(el: Element, visible: boolean = isVisible(el)): Elemen
   const checkedProp = isInput(el) && ('checkbox' === el.type || 'radio' === el.type) && el.checked;
   if (checkedProp || true === ariaBool(el, 'aria-checked')) states.push(ElementState.CHECKED);
   if (true === ariaBool(el, 'aria-expanded')) states.push(ElementState.EXPANDED);
+  if (true === ariaBool(el, 'aria-pressed')) states.push(ElementState.PRESSED);
   if (el.ownerDocument.activeElement === el) states.push(ElementState.FOCUSED);
 
   return states;
@@ -327,9 +378,38 @@ export function getValue(el: Element): string | undefined {
   return valueNow ?? undefined;
 }
 
-/** Whether the element's OWN box is hidden by CSS or the HTML `hidden` attribute — NOT aria-hidden. */
+/**
+ * Whether the nearest `<details>` ancestor is closed and does not keep this element on screen.
+ *
+ * A closed native `<details>` unrenders its content — everything except its first `<summary>`
+ * child — without setting `display:none` on it, and in some engines the content keeps a layout
+ * box, so the own-box signals cannot see it. Reported from the field: a control inside a closed
+ * `<details>` read as `visible`, and the expanding click returned `already_true`/no-fault. Only
+ * the first summary child stays on screen; an element inside it stays visible, and a nested open
+ * `<details>` inside a closed one is still hidden — the ancestor walk in isVisible composes it.
+ */
+function hiddenInsideClosedDetails(el: Element): boolean {
+  const parent = el.parentElement;
+  if (null === parent) return false;
+  const details = parent.closest(HTML_DETAILS_TAG);
+  if (null === details || details.hasAttribute(HTML_DETAILS_OPEN_ATTRIBUTE)) return false;
+  // The first `<summary>` CHILD, read from `children` rather than `:scope > summary`: inside a
+  // shadow root some selector engines answer `:scope` with nothing, and every summary slotted
+  // content sits under then read as hidden.
+  const summary = Array.from(details.children).find(
+    (child) => HTML_SUMMARY_TAG === child.localName,
+  );
+  return summary === undefined || !summary.contains(el);
+}
+
+/**
+ * Whether the element's OWN box hides it — one forced-style resolution, no composed ancestor
+ * walk. The one ancestor reading is `hiddenInsideClosedDetails`, which consults only the nearest
+ * `<details>` boundary; composing the chain is still isVisible's job.
+ */
 function cssHidden(el: Element): boolean {
   if (isHtmlElement(el) && el.hidden) return true;
+  if (hiddenInsideClosedDetails(el)) return true;
   const view = el.ownerDocument.defaultView;
   if (view !== null) {
     const style = view.getComputedStyle(el);
@@ -352,12 +432,52 @@ function selfHidden(el: Element): boolean {
 }
 
 /**
- * Whether the element is actually visible (not display:none/hidden/aria-hidden/opacity:0), walking to
- * root. This is an O(depth) forced-style walk PER node; `memo` (optional, scoped to ONE synchronous
- * query pass) caches the full inherited result per element so a broad state-filtered query stops
- * re-resolving getComputedStyle up the same ancestor chain for every sibling. Sound because the DOM is
- * static for the pass's duration — the cache MUST be a per-call Map, never module-level (that would go
- * stale the instant the app mutates, the same trap the shadow-root note in query.ts documents).
+ * The slot a light-DOM child renders in when its host's shadow root is CLOSED. `assignedSlot` is
+ * null there by design, but a root the registry captured can still be asked from inside which of
+ * its slots holds the child. Null when the host has no captured closed root.
+ */
+function slotInCapturedClosedRoot(el: Element): HTMLSlotElement | null {
+  const host = el.parentElement;
+  if (null === host || null !== host.shadowRoot) return null;
+  const root = capturedRootOf(host);
+  if (null === root) return null;
+  for (const slot of Array.from(root.querySelectorAll('slot'))) {
+    if (slot.assignedElements().includes(el)) return slot;
+  }
+  return null;
+}
+
+/**
+ * The next node up the COMPOSED tree: the assigned slot for slotted content, else `parentElement`,
+ * or the shadow host when the walk reaches the top of a shadow tree. A ShadowRoot is a DocumentFragment, so `parentElement` is null there,
+ * and query candidates include shadow content (open roots always, captured closed roots too — see
+ * `embeddedRootsUnder`). Without the hop, nothing that hides the host — a closed `<details>`,
+ * display:none, aria-hidden — is ever seen by the walk inside the host's shadow tree.
+ */
+function parentAcrossShadowBoundary(el: Element): Element | null {
+  // A SLOTTED element renders where its slot is, not as a child of the host: its composed parent
+  // is `assignedSlot`, inside the host's shadow tree. Going straight to `parentElement` (the host)
+  // skipped every ancestor of the slot, so light-DOM content slotted into a closed `<details>` in a
+  // component's shadow root still read visible (#1175). A closed root reports no `assignedSlot`, so
+  // for one Reticle captured the slot is found from inside it; an uncaptured one falls back to the
+  // host as before.
+  const slot = el.assignedSlot ?? slotInCapturedClosedRoot(el);
+  if (null !== slot) return slot;
+  if (null !== el.parentElement) return el.parentElement;
+  // `host` exists on a ShadowRoot and not on a Document, the other thing getRootNode() returns
+  // for a connected element.
+  const host: Element | undefined = (el.getRootNode() as Partial<ShadowRoot>).host;
+  return host ?? null;
+}
+
+/**
+ * Whether the element is actually visible (not display:none/hidden/aria-hidden/opacity:0/inside a
+ * closed `<details>`), walking to root across shadow boundaries. This is an O(depth) forced-style
+ * walk PER node; `memo` (optional, scoped to ONE synchronous query pass) caches the full inherited
+ * result per element so a broad state-filtered query stops re-resolving getComputedStyle up the
+ * same ancestor chain for every sibling. Sound because the DOM is static for the pass's duration —
+ * the cache MUST be a per-call Map, never module-level (that would go stale the instant the app
+ * mutates, the same trap the shadow-root note in query.ts documents).
  */
 /**
  * True when the element is inside the viewport right now: visible AND its bounding box intersects
@@ -380,7 +500,7 @@ export function isVisible(el: Element, memo?: Map<Element, boolean>): boolean {
   if (!el.isConnected) return false;
   const cached = memo?.get(el);
   if (cached !== undefined) return cached;
-  const parent = el.parentElement;
+  const parent = parentAcrossShadowBoundary(el);
   // Each cached boolean already folds in that node's own aria-hidden/[hidden]/display/visibility/opacity,
   // so inherited visibility composes by AND up the chain and a sibling short-circuits at the first
   // cached ancestor.
@@ -409,7 +529,7 @@ export function isHiddenByAriaOnly(el: Element): boolean {
   while (current !== null) {
     if ('true' === current.getAttribute('aria-hidden')) foundAriaHidden = true;
     if (cssHidden(current)) return false;
-    current = current.parentElement;
+    current = parentAcrossShadowBoundary(current);
   }
   return foundAriaHidden;
 }

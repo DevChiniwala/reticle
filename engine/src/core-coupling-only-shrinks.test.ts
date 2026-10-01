@@ -67,7 +67,16 @@ import { fileURLToPath } from 'node:url';
  * thing to argue about rather than the thing to avoid. So: the file count went UP by one, the
  * estimate that said otherwise was mine, and it is written here rather than quietly corrected.
  */
-const MAX_FILES_IMPORTING_CORE = 44;
+/*
+ * 44 -> 45 for the `compare` predicate's evaluator, `predicate-compare.ts`.
+ *
+ * It could have gone into `predicate-eval.ts`, which already imports core, and kept this flat. That
+ * file is 850 lines and this is 250, so the file cap (rule 6) would have forced the same split one
+ * commit later. It borrows nothing the other evaluators do not already borrow except the two
+ * constants below, and it reads events the way `evalNet` and `evalSignal` do, so it goes with the
+ * rest when `Realm` arrives.
+ */
+const MAX_FILES_IMPORTING_CORE = 45;
 /**
  * Raised by one, deliberately, and this is the argument for it.
  *
@@ -95,7 +104,25 @@ const MAX_FILES_IMPORTING_CORE = 44;
  * `EventType` and `ReticleEvent` are still the real debt, still most of the import sites, and still
  * the thing `Realm` exists to fix. Unchanged by this.
  */
-const MAX_DISTINCT_SYMBOLS = 58;
+/*
+ * 58 -> 59 for the Server Action write identity, and it is the same case as the fingerprint above.
+ *
+ * Every Server Action POSTs to the page's own URL, and the header that names the action is the only
+ * thing that separates two of them — so `duplicate-request` pooled the calls as an unknown identity
+ * and accused a page of a double submit it never made. `NEXT_ACTION_FIELD` is a name that crosses
+ * the wire, so it lives in core and the engine borrows it; inlining the string in `identityOf`
+ * would keep this number flat by breaking the rule the number exists to protect. It joins
+ * `REQUEST_SHAPE_FIELD` in the same `identityOf` and the same import, so the file count is unmoved.
+ * A realm-shaped engine takes the request's identity from the realm, and this goes with the rest.
+ */
+/*
+ * 59 -> 62 for the `compare` predicate: `CompareAs` and `NetBodySide` are the values an agent writes
+ * into `as` and `body`, which cross the wire and so live in core (rule 3 forbids spelling them here),
+ * and `compareSourceClauses` is the structural reader core, the engine and the server all walk a
+ * comparison with. The source TYPE is derived from `Predicate` rather than imported, because that one
+ * could be. Like the predicate contract above, these are the claim language, not Reticle's event nouns.
+ */
+const MAX_DISTINCT_SYMBOLS = 62;
 
 /*
  * `node:path`'s dirname, not a hand-rolled one.

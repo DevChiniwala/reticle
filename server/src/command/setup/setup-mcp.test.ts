@@ -36,7 +36,14 @@ interface Recorded {
 }
 
 function machine(m: Machine = {}): Recorded {
-  const files = m.files ?? {};
+  // A registered Claude Code is an entry in its state file — which is what is read now, instead of
+  // `claude mcp get`, which launches the server to health-check it.
+  const files: Record<string, string> = {
+    ...(true === m.claudeAlreadyRegistered
+      ? { '.claude.json': JSON.stringify({ mcpServers: { reticle: { command: 'npx' } } }) }
+      : {}),
+    ...(m.files ?? {}),
+  };
   const writes: { path: string; contents: string }[] = [];
   const ran: string[] = [];
   const steps: OnboardingStep[] = [];
@@ -54,8 +61,6 @@ function machine(m: Machine = {}): Recorded {
       ran.push(`${command} ${args.join(' ')}`);
       if (CLAUDE !== command) return false;
       if (true !== m.claudeInstalled) return false;
-      // `claude mcp get reticle` exits 0 only when an entry is already there.
-      if (args.includes('get')) return true === m.claudeAlreadyRegistered;
       return true;
     },
     reportStep: (s) => void steps.push(s),
@@ -89,6 +94,10 @@ describe('a client that owns its own registration is still a client', () => {
     expect(result.alreadyThere).toContain('claude-code');
     expect(result.registered).not.toContain('claude-code');
     expect(ran.some((c) => c.includes('mcp add'))).toBe(false);
+    expect(
+      ran.some((c) => /\bmcp (get|list)\b/.test(c)),
+      'launched the server to check',
+    ).toBe(false);
   });
 
   // The negative control. Without this, "detect everything always" would pass the two above and
@@ -103,6 +112,30 @@ describe('a client that owns its own registration is still a client', () => {
 });
 
 describe('the funnel reports what actually happened', () => {
+  it('reports failed when Claude is present but refuses registration', () => {
+    const { io, steps } = machine();
+    io.runCli = (_command, args) => args.includes('--version');
+    const result = setupMcp(io);
+    expect(result.registered).toEqual([]);
+    expect(result).toMatchObject({ failed: ['claude-code'] });
+    expect(stepStatus(steps, 'mcp_registered')).toBe('failed');
+  });
+
+  it('continues registering other agents after a config write fails', () => {
+    const { io, steps } = machine({
+      files: { '.cursor/mcp.json': '{}', '.codeium/windsurf/mcp_config.json': '{}' },
+    });
+    const write = io.writeFile.bind(io);
+    io.writeFile = (path, content) => {
+      if (path.includes('.cursor')) throw new Error('permission denied');
+      write(path, content);
+    };
+    const result = setupMcp(io);
+    expect(result).toMatchObject({ failed: ['cursor'] });
+    expect(result.registered).toContain('windsurf');
+    expect(stepStatus(steps, 'mcp_registered')).toBe('completed');
+  });
+
   it('counts a machine with Claude Code as registered, not skipped', () => {
     const { io, steps } = machine({ claudeInstalled: true });
     setupMcp(io);

@@ -1,3 +1,4 @@
+import { VITE_IMPORT } from '../patch/vite-config.js';
 import { describe, expect, it } from 'vitest';
 import { buildPlan, frameworkPackages, StepStatus, type PlanInput } from './plan.js';
 import { Framework, PackageManager, UiLibrary, type Detection } from '@/detect/detect.js';
@@ -355,8 +356,46 @@ describe('buildPlan — Vite', () => {
     expect(plan.steps.some((s) => s.title.includes('entry'))).toBe(false);
   });
 
-  it('bails to manual when there is no vite config file', () => {
+  // A plain Vite app needs no config file, and `npm create vite` ships the vanilla template
+  // without one. Init answered that with a paste-this-yourself step and a non-zero exit, on the
+  // simplest app there is.
+  it('creates the vite config when a plain Vite app has none', () => {
     const plan = buildPlan(input({ viteConfig: null }));
+    const s = step(plan, 'Vite plugin');
+    expect(s.status).toBe(StepStatus.APPLY);
+    expect(s.write?.path).toBe('vite.config.ts');
+    expect(s.write?.content).toContain("from 'vite'");
+    expect(s.write?.content).toContain(VITE_IMPORT);
+    expect(s.write?.content).toContain('plugins: [reticle()]');
+  });
+
+  it('imports the sensor, the package it installed, in a plain Vite app with no renderer', () => {
+    const plan = buildPlan(
+      input({ viteConfig: null, detection: detection(Framework.VITE, 19, UiLibrary.UNKNOWN) }),
+    );
+    const module = step(plan, 'Capabilities + store').write?.content ?? '';
+    expect(module).toContain("from '@reticlehq/browser'");
+    expect(module).not.toContain('@reticlehq/react');
+  });
+
+  it('creates a JavaScript config, with the port, in a JavaScript app', () => {
+    const plan = buildPlan(
+      input({
+        viteConfig: null,
+        detection: { ...detection(Framework.VITE), typescript: false },
+        options: { port: 4471, mcp: true, install: false },
+      }),
+    );
+    const s = step(plan, 'Vite plugin');
+    expect(s.write?.path).toBe('vite.config.mjs');
+    expect(s.write?.content).toContain('reticle({ port: 4471 })');
+  });
+
+  it('still bails to manual for a Vite-based framework whose config is missing', () => {
+    // Those frameworks ship their own plugin in that file; a config without it would not boot.
+    const plan = buildPlan(
+      input({ viteConfig: null, detection: detection(Framework.REACT_ROUTER) }),
+    );
     expect(step(plan, 'Vite plugin').status).toBe(StepStatus.MANUAL);
   });
 
@@ -660,10 +699,15 @@ describe('buildPlan — non-React apps are marked unverified', () => {
       buildPlan(input({ detection: detection(Framework.VITE, 0, lib) })),
       `${lib} is UNVERIFIED`,
     );
+  const gatedLibStep = (framework: Framework, lib: UiLibrary) =>
+    maybeStep(
+      buildPlan(input({ detection: detection(framework, 0, lib) })),
+      `${lib} setup verified, drive unverified`,
+    );
 
   it('flags Vue and Preact apps as a NOTICE — worth reading, but not work to do', () => {
     for (const lib of [UiLibrary.VUE, UiLibrary.PREACT] as const) {
-      const s = libStep(lib);
+      const s = libStep(lib) ?? gatedLibStep(Framework.VITE, lib);
       // Not MANUAL: the app is wired and working, it is just not covered by a gate. Counting this as
       // an outstanding step made "steps remaining" a number that could never reach zero.
       expect(s?.status).toBe(StepStatus.NOTICE);
@@ -675,7 +719,36 @@ describe('buildPlan — non-React apps are marked unverified', () => {
     // `src/lib/Counter.svelte:5` and the identical drive on Vue reports no `source` at all — so this
     // assertion was pinning a promise a Vue reader could not collect on.
     expect(libStep(UiLibrary.PREACT)?.detail).toContain('does too');
-    expect(libStep(UiLibrary.VUE)?.detail).toContain('does NOT come through');
+    expect(gatedLibStep(Framework.VITE, UiLibrary.VUE)?.detail).toContain('does NOT come through');
+  });
+
+  /**
+   * Nuxt was labelled "vue is UNVERIFIED" while the install gate scaffolds Nuxt (and Vite + Vue) from
+   * scratch on every change. The label has to match the gate's scaffold list: the SETUP is proven
+   * there, the drive is not, and the title says both.
+   */
+  it('says the setup is verified for a stack the install gate scaffolds', () => {
+    for (const framework of [Framework.NUXT, Framework.VITE]) {
+      const s = gatedLibStep(framework, UiLibrary.VUE);
+      expect(s?.status, framework).toBe(StepStatus.NOTICE);
+      expect(s?.detail, framework).toContain('install gate');
+      expect(
+        maybeStep(
+          buildPlan(input({ detection: detection(framework, 0, UiLibrary.VUE) })),
+          'vue is UNVERIFIED',
+        ),
+        framework,
+      ).toBeUndefined();
+    }
+  });
+
+  it('still calls a stack the gate does not scaffold UNVERIFIED', () => {
+    const astroVue = maybeStep(
+      buildPlan(input({ detection: detection(Framework.ASTRO, 0, UiLibrary.VUE) })),
+      'vue is UNVERIFIED',
+    );
+    expect(astroVue?.detail).toContain('No CI gate covers vue');
+    expect(libStep(UiLibrary.PREACT)).toBeDefined();
   });
 
   it('an UNVERIFIED stack still reports zero manual steps when everything applied', () => {
@@ -1111,6 +1184,17 @@ describe('buildPlan — electron-vite', () => {
       'electron.vite.config.ts',
     );
     expect(maybeStep(plan, 'Vite plugin')).toBeUndefined();
+  });
+
+  // `npm create vite --template vanilla-ts` was handed `@reticlehq/react`: a package that peers on
+  // React, into an app with none.
+  it('installs the sensor, not the React kit, into plain Vite with no known renderer', () => {
+    const packages = frameworkPackages(Framework.VITE, UiLibrary.UNKNOWN);
+    expect(packages).toEqual(['@reticlehq/browser', '@reticlehq/vite-plugin']);
+  });
+
+  it('keeps the kit for an unknown renderer where the framework implies React', () => {
+    expect(frameworkPackages(Framework.NEXT, UiLibrary.UNKNOWN)).toContain('@reticlehq/react');
   });
 
   it('installs the sensor and the Electron helper, not the React kit, for Vue', () => {

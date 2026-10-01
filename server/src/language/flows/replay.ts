@@ -1,5 +1,5 @@
 import { REDACTED_FILL, secretEnvKey } from './fields/flow-secret-field.js';
-import { FlowPredicateSchema, type Predicate } from '@reticlehq/core';
+import { FlowPredicateSchema, Verified, type Predicate } from '@reticlehq/core';
 import {
   DANGEROUS_ACTION_CONFIRM_ARG,
   ReticleCommand,
@@ -82,6 +82,21 @@ function sourceFromResult(res: Record<string, unknown>): Record<string, unknown>
 }
 
 /**
+ * The pathname of a session's live url, or undefined when it has none yet.
+ *
+ * Pathname rather than the whole url, because that is what `startPath` is compared against and what
+ * a hash-routed app makes meaningless in the document location — see routeOfEvent.
+ */
+export function pathOf(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Capture an act into every in-flight recording, or do nothing when none is running.
  *
  * Every tool that drives the page must call this. reticle_act_and_wait did not, which is the tool
@@ -111,7 +126,36 @@ export function captureAct(
   // story failing at its last step. See enforceableExpect below.
   const expect = enforceableExpect(args['until'] ?? args['predicate']);
   if (expect !== undefined) step.expect = expect;
+  if (route !== undefined) step.page = route;
+  const intent = asString(args['intent'])?.trim();
+  if (intent !== undefined && intent.length > 0) step.intent = intent;
   recordings.capture(step, route);
+}
+
+/**
+ * Capture an act_and_wait once its verdict is known, keeping `until` as the step's expectation only
+ * on a yes. Recorded before the verdict, a step kept an `until` that came back `no` or `no-fault` —
+ * a regression test asserting something never once observed to hold because of the action. The
+ * action itself is always recorded: it happened, and replay needs it to reach the next step.
+ */
+export function captureVerdictedAct(
+  recordings: Parameters<typeof captureAct>[0],
+  args: Record<string, unknown>,
+  res: unknown,
+  route: string | undefined,
+  verified: string | undefined,
+): void {
+  const { until: _until, predicate: _predicate, ...unproved } = args;
+  captureAct(recordings, Verified.YES === verified ? args : unproved, res, route);
+}
+
+/** Fold a PASSING standalone assertion into the step it proved. See RecordingStore.attachExpect. */
+export function captureAssertion(
+  recordings: { attachExpect: (expect: Predicate) => void },
+  raw: unknown,
+): void {
+  const expect = enforceableExpect(raw);
+  if (expect !== undefined) recordings.attachExpect(expect);
 }
 
 /**

@@ -11,7 +11,7 @@ import {
   type QueryResult,
   TRANSPORT_LIMITS,
 } from '@reticlehq/core';
-import { isElement, isFrame, isHtmlElement, isInput, isSelect, isTextArea } from './realm.js';
+import { isActionTarget, isElement, isFrame, isInput, isSelect, isTextArea } from './realm.js';
 import { capturedRootOf } from './shadow-registry.js';
 import {
   getAccessibleName,
@@ -151,11 +151,16 @@ function resolveContainer(scope: string | undefined): {
   scopeMissing: boolean;
 } {
   if (scope === undefined) return { container: document.body, scopeMissing: false };
+  // An SVG element is a scope too. `look` hands out refs for SVG links, and the action layer drives
+  // them, so refusing one here reported a scope the page plainly has as MISSING - a floor plan whose
+  // rooms are `<a href>` inside an `<svg>` could be clicked but never scoped to (#1122). The locators
+  // below read only what Element has (attributes, children, text), which is also why `elementsUnder`
+  // already walks SVG descendants.
   const byRef = refs.resolve(scope);
-  if (isHtmlElement(byRef)) return { container: byRef, scopeMissing: false };
+  if (isActionTarget(byRef)) return { container: byRef, scopeMissing: false };
   try {
     const found = document.querySelector(scope);
-    if (isHtmlElement(found)) return { container: found, scopeMissing: false };
+    if (isActionTarget(found)) return { container: found, scopeMissing: false };
   } catch {
     // invalid selector - treat as a missing scope, never a whole-page search
   }
@@ -512,10 +517,10 @@ export function matchQuery(
     state === undefined ? elements : elements.filter((el) => inState(el, state, visMemo));
   const attrs = query.attrs;
   const described = filtered.slice(0, Math.max(0, Math.min(limit, MAX_DESCRIBED)));
-  // When more than one match is described, stamp `inViewport` onto those that sit in the window.
-  // Target resolution (#886) ranks ambiguity refusals by that fact; it is omitted from single-match
-  // and snapshot-wide describes because it would bloat every element on every look (#398).
-  const stampViewport = described.length > 1;
+  // Stamp `inViewport` when more than one match is described (ambiguity ranking, #886) OR when the
+  // caller explicitly filtered by that state (so the evidence proves the verdict, #1279). Omitted
+  // from unfiltered single-match and snapshot-wide describes to avoid bloat (#398).
+  const stampViewport = described.length > 1 || ElementState.IN_VIEWPORT === state;
   const descriptors: ElementDescriptor[] = described.map((el) => {
     let base = describe(el, visMemo);
     if (

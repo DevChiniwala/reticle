@@ -38,12 +38,12 @@ You never install `@reticlehq/server`. Your agent runs it with `npx`.
 
 The package split is not cosmetic. Each boundary enforces something:
 
-| Package   | Runs in     | Hard rule                                              |
-| --------- | ----------- | ------------------------------------------------------ |
-| `core`    | both        | Depends only on `zod`. Sits at the bottom of the graph |
-| `browser` | the browser | Never imports a Node API                               |
-| `server`  | Node        | Never imports a DOM API                                |
-| `react`   | the browser | Optional. Core must work without it                    |
+| Package | Runs in | Hard rule |
+| --- | --- | --- |
+| `core` | both | Depends only on `zod` and `open-verification`. Sits at the bottom of the graph |
+| `browser` | the browser | Never imports a Node API |
+| `server` | Node | Never imports a DOM API |
+| `react` | the browser | Optional. Core must work without it |
 
 Those rules are why the browser SDK cannot accidentally pull in a filesystem call, and why the server cannot accidentally depend on `window`. They are enforced by the dependency graph, not by discipline.
 
@@ -72,7 +72,7 @@ Those rules are why the browser SDK cannot accidentally pull in a filesystem cal
 
 **Why it exists:** this is the part that makes Reticle different from a browser-automation tool. Because it runs _inside_ the app rather than driving it from outside, it can see a state mutation and a fired signal, not just a rendered pixel.
 
-**Depends on:** `@reticlehq/core`. [`reticle_query`](/tools/query) speaks role, label and testid rather than CSS selectors through its own local accessibility engine, so what a snapshot reports is exactly what a query matches.
+**Depends on:** `@reticlehq/core`. [`reticle_look { action: "find" }`](/tools/query) speaks role, label and testid rather than CSS selectors through its own local accessibility engine, so what a snapshot reports is exactly what a query matches.
 
 **Install it directly when** you are not on React, or you want `connect()` under your own control:
 
@@ -147,7 +147,7 @@ export default defineConfig({ plugins: [reticle(), react()] });
 
 **Stamps `data-reticle-source="file:line:col"` onto JSX host elements.**
 
-**Why it exists:** React 19 dropped `_debugSource`, which is what source mapping used to rely on. This plugin puts the information back, at build time, in dev only. Without it, `reticle_inspect` can still tell you the component name but not the file.
+**Why it exists:** React 19 dropped `_debugSource`, which is what source mapping used to rely on. This plugin puts the information back, at build time, in dev only. Without it, `reticle_look { action: "element" }` can still tell you the component name but not the file.
 
 **Depends on:** nothing. **Peer:** `@babel/core`.
 
@@ -239,7 +239,7 @@ A lint rule makes the signal layer self-enforcing, which is the only way a conve
 
 ```toml
 [dependencies]
-reticle-tauri = "3.3"
+reticle-tauri = "3.4"
 ```
 
 <Warning>

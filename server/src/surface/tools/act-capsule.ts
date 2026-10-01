@@ -43,6 +43,51 @@ interface CapsuleSaveInputs {
   root?: string | undefined;
 }
 
+/**
+ * What the act claimed would happen, in words: `route /settings`, `POST /v1/pay → 200`,
+ * `element "Issues"`. Read off the predicate the agent declared, because the causal links only name
+ * signals and requests: a failed route, element or text claim used to be filed as "declared
+ * consequence", which tells whoever reads the capsule nothing about what was expected.
+ */
+export function describeExpected(predicate: unknown): string | undefined {
+  const p = asRecord(predicate);
+  const kind = asString(p['kind']);
+  if (kind === undefined) return undefined;
+  const all = (key: string, joiner: string): string | undefined => {
+    const parts = (Array.isArray(p[key]) ? (p[key] as unknown[]) : [])
+      .map(describeExpected)
+      .filter((d): d is string => d !== undefined);
+    return 0 === parts.length ? undefined : parts.join(joiner);
+  };
+  const q = asRecord(p['query']);
+  const named =
+    asString(p['name']) ?? asString(q['name']) ?? asString(q['value']) ?? asString(q['testid']);
+  switch (kind) {
+    case 'route':
+      return `route ${asString(p['pathname']) ?? asString(p['contains']) ?? '?'}`;
+    case 'net': {
+      const status = 'number' === typeof p['status'] ? ` → ${String(p['status'])}` : '';
+      return `${asString(p['method']) ?? 'a'} ${asString(p['urlContains']) ?? 'request'}${status}`;
+    }
+    case 'signal':
+      return `signal ${asString(p['name']) ?? '?'}`;
+    case 'element':
+      return `${true === p['absent'] ? 'no ' : ''}element ${named === undefined ? '?' : `"${named}"`}`;
+    case 'text':
+      return `${true === p['absent'] ? 'no ' : ''}text "${asString(p['contains']) ?? '?'}"`;
+    case 'allOf':
+      return all('predicates', ' AND ');
+    case 'anyOf':
+      return all('predicates', ' OR ');
+    case 'not': {
+      const inner = describeExpected(p['predicate']);
+      return inner === undefined ? undefined : `not ${inner}`;
+    }
+    default:
+      return kind;
+  }
+}
+
 /** Returns the capsule id when one was written, or undefined when there was nothing to save. */
 export async function saveFailedAssertCapsule(
   inputs: CapsuleSaveInputs,
@@ -77,7 +122,9 @@ export async function saveFailedAssertCapsule(
   const body = {
     version: CAPSULE_VERSION as typeof CAPSULE_VERSION,
     origin: 'failed-assert',
-    expected: expectedText.length > 0 ? expectedText : 'declared consequence',
+    expected:
+      describeExpected(args['until'] ?? args['predicate']) ??
+      (expectedText.length > 0 ? expectedText : 'declared consequence'),
     observed: capsule.firstDivergence?.observed ?? verdict.failureReason ?? 'not observed',
     steps: [
       {

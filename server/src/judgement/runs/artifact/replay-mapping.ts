@@ -7,9 +7,15 @@
 
 import {
   ReplayStatus,
+  RUN_RECORDING_MAX_BYTES,
+  RUN_STEP_RESULTS_MAX,
+  RUN_TEXT_MAX,
   RunFlowStatus,
+  type FlowFile,
   type FlowReplayResult,
+  type FlowStepResult,
   type RunFlowResult,
+  type RunStepResult,
 } from '@reticlehq/core';
 import { SUCCESS_STEP_TOOL } from '@/language/flows/flow-success.js';
 
@@ -18,16 +24,56 @@ export function runFlowStatusOf(status: ReplayStatus): RunFlowStatus {
   return status === ReplayStatus.OK ? RunFlowStatus.PASS : RunFlowStatus.FAIL;
 }
 
+const clip = (text: string): string =>
+  text.length > RUN_TEXT_MAX ? `${text.slice(0, RUN_TEXT_MAX - 1)}…` : text;
+
+/** One step as synced: what it did, where, and whether it held. */
+function stepResultOf(step: FlowStepResult): RunStepResult {
+  return {
+    step: step.step,
+    anchor: clip(step.anchor),
+    ok: step.ok,
+    ...(step.page === undefined ? {} : { page: step.page }),
+    ...(step.endPage === undefined ? {} : { endPage: step.endPage }),
+    ...(step.consequence === undefined ? {} : { consequence: clip(step.consequence) }),
+    ...(step.error === undefined ? {} : { error: clip(step.error) }),
+    ...(step.drift === undefined ? {} : { drift: step.drift.reasonKind }),
+  };
+}
+
+/**
+ * The flow as recorded, when it is small enough to travel — what lets a teammate replay this run
+ * from the cloud. Fill values were already redacted when the flow was saved.
+ */
+function recordingOf(flow: FlowFile): Pick<RunFlowResult, 'recording' | 'recordingOmitted'> {
+  const recording = {
+    ...(flow.startPath === undefined ? {} : { startPath: flow.startPath }),
+    steps: flow.steps,
+  };
+  return Buffer.byteLength(JSON.stringify(recording)) > RUN_RECORDING_MAX_BYTES
+    ? { recordingOmitted: true }
+    : { recording };
+}
+
 /** Map one replay (plus its measured duration) into a RunFlowResult for the artifact's flows[]. */
-export function mapReplayToFlowResult(replay: FlowReplayResult, durationMs: number): RunFlowResult {
-  const status = runFlowStatusOf(replay.status);
+export function mapReplayToFlowResult(
+  replay: FlowReplayResult,
+  durationMs: number,
+  flow?: FlowFile,
+): RunFlowResult {
+  // A replay that could not start returns OK with no steps. Nothing ran, so it is SKIPPED — which
+  // every reader of a run (the verdict, the gate) already refuses to count as a pass.
+  const status =
+    replay.unverifiable === undefined ? runFlowStatusOf(replay.status) : RunFlowStatus.SKIPPED;
   const failureReason =
-    status === RunFlowStatus.FAIL
-      ? (replay.decision?.whatChanged ??
-        replay.decision?.summary ??
-        replay.error?.message ??
-        'flow failed')
-      : undefined;
+    replay.unverifiable !== undefined
+      ? replay.unverifiable.reason
+      : status === RunFlowStatus.FAIL
+        ? (replay.decision?.whatChanged ??
+          replay.decision?.summary ??
+          replay.error?.message ??
+          'flow failed')
+        : undefined;
   // A flow with a success oracle gets a synthetic 'success' step appended by replay; surface its label
   // as the run's `oracle` so the verdict counts this flow as consequence-backed (→ HIGH confidence),
   // not a bare smoke click. Without this, an oracle-backed pass reads as MEDIUM and undersells itself.
@@ -39,5 +85,9 @@ export function mapReplayToFlowResult(replay: FlowReplayResult, durationMs: numb
     durationMs,
     ...(oracle !== undefined ? { oracle } : {}),
     ...(failureReason !== undefined ? { failureReason } : {}),
+    ...(0 === replay.steps.length
+      ? {}
+      : { stepResults: replay.steps.slice(0, RUN_STEP_RESULTS_MAX).map(stepResultOf) }),
+    ...(flow === undefined ? {} : recordingOf(flow)),
   };
 }

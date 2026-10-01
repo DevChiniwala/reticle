@@ -10,7 +10,7 @@
  * user-level credential. "Cloud attached" = a valid link file AND a key for its project id (or env creds).
  */
 import { join } from 'node:path';
-import { ReticleDir } from '@reticlehq/core';
+import { DEFAULT_PLATFORM_URL, ReticleDir, ReticleEnv } from '@reticlehq/core';
 import type { FileSystemPort } from '@/memory/project/fs/fs-port.js';
 import { resolveCloudConfig, type CloudConfig } from './cloud-sync.js';
 
@@ -55,6 +55,8 @@ export interface ProjectCloud {
   verify: VerifyMode;
   /** The cloud project id this project is linked to (for display/logging); null when env-fallback. */
   projectId: string | null;
+  /** Why `config` is null, in words a person can act on. Absent when attached. */
+  reason?: string;
 }
 
 interface CloudLink {
@@ -169,8 +171,8 @@ const normalizeCloudUrl = (url: string): string => url.replace(/\/+$/, '');
 
 /**
  * Resolve the cloud picture for a project rooted at `reticleRoot`. Reads the project's link file + the
- * user credential store; if the project isn't linked (no cloud.json), falls back to the global env creds
- * so the single-project / CI flow is unchanged. `homeDir` is injected (testable; `os.homedir()` at call).
+ * user credential store, else the env key; if the project isn't linked (no cloud.json), the env creds
+ * are the whole story (the single-project / CI flow). `homeDir` is injected (testable; `os.homedir()` at call).
  */
 export async function resolveProjectCloud(
   fs: FileSystemPort,
@@ -181,11 +183,15 @@ export async function resolveProjectCloud(
   const link = parseLink(await readJson(fs, join(reticleRoot, CLOUD_LINK_FILE)));
   if (null === link) {
     // No per-project link → the env vars are the whole story (legacy single-project / CI behaviour).
+    const config = resolveCloudConfig(env);
     return {
-      config: resolveCloudConfig(env),
+      config,
       policy: DEFAULT_SYNC_POLICY,
       verify: VerifyMode.LOCAL,
       projectId: null,
+      ...(null === config
+        ? { reason: 'cloud not attached here: run `reticle link`, or set RETICLE_API_KEY' }
+        : {}),
     };
   }
   const policy: SyncPolicy = {
@@ -194,15 +200,40 @@ export async function resolveProjectCloud(
     flows: link.sync.flows ?? DEFAULT_SYNC_POLICY.flows,
     capsules: link.sync.capsules ?? DEFAULT_SYNC_POLICY.capsules,
   };
-  const key = credentialFor(
+  const stored = credentialFor(
     await readJson(fs, join(homeDir, ReticleDir.ROOT, CREDENTIALS_FILE)),
     link.projectId,
     link.url,
     link.orgId,
   );
-  const config: CloudConfig | null =
-    key !== null ? { url: link.url.replace(/\/+$/, ''), apiKey: key } : null;
-  return { config, policy, verify: link.verify, projectId: link.projectId };
+  /*
+   * No stored key, so the environment's — which is the whole of CI: `cloud.json` is committed, a
+   * CI clone is therefore linked, and it has no keystore. Only when the environment's key is FOR
+   * this link's host (its URL, else the hosted default): a key exported for one cloud is not a
+   * credential for a repo linked to another, the same rule `credentialFor` applies to stored keys.
+   */
+  const fromEnv = resolveCloudConfig(env);
+  const key =
+    stored ??
+    (fromEnv !== null && fromEnv.url === normalizeCloudUrl(link.url) ? fromEnv.apiKey : null);
+  const linkedUrl = normalizeCloudUrl(link.url);
+  const config: CloudConfig | null = key !== null ? { url: linkedUrl, apiKey: key } : null;
+  const reason =
+    config !== null
+      ? undefined
+      : fromEnv !== null
+        ? `this repo is linked to ${linkedUrl}, and RETICLE_API_KEY is set for ${fromEnv.url}: ` +
+          `set RETICLE_CLOUD_URL=${linkedUrl} to use that key here, or run \`reticle login\` for it`
+        : `this repo is linked to ${linkedUrl}, and this machine has no key for it: run ` +
+          '`reticle login`, or set RETICLE_API_KEY' +
+          (DEFAULT_PLATFORM_URL === linkedUrl ? '' : ` with RETICLE_CLOUD_URL=${linkedUrl}`);
+  return {
+    config,
+    policy,
+    verify: link.verify,
+    projectId: link.projectId,
+    ...(reason === undefined ? {} : { reason }),
+  };
 }
 
 /**
@@ -217,3 +248,18 @@ export const linkedCloudPort =
   (fs: FileSystemPort, reticleRoot: string, homeDir: string, env: NodeJS.ProcessEnv) =>
   async (): Promise<CloudConfig | null> =>
     (await resolveProjectCloud(fs, reticleRoot, homeDir, env)).config;
+
+/**
+ * The environment with this project's resolved credential written into it, for the readers that
+ * take an env record (the panel's model config and harness switch). Handed `process.env` alone,
+ * they never saw a key `reticle link` had stored. Resolved per call, so a link made mid-session
+ * takes effect without a restart.
+ */
+export const platformEnvPort =
+  (fs: FileSystemPort, reticleRoot: string, homeDir: string, env: NodeJS.ProcessEnv) =>
+  async (): Promise<NodeJS.ProcessEnv> => {
+    const config = (await resolveProjectCloud(fs, reticleRoot, homeDir, env)).config;
+    return null === config
+      ? env
+      : { ...env, [ReticleEnv.API_KEY]: config.apiKey, [ReticleEnv.CLOUD_URL]: config.url };
+  };

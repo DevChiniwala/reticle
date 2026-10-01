@@ -15,8 +15,15 @@ export interface PredicateSession {
   command(name: string, args?: Record<string, unknown>, timeoutMs?: number): Promise<CommandResult>;
   eventsSince(cursor: number): ReticleEvent[];
   onEvent(listener: (event: ReticleEvent) => void): () => void;
+  /** Hold this wait's window against eviction while it is graded; returns the release (#668). */
+  protectWindow?(cursor: number): () => void;
   /** Milliseconds since connect — the same clock that stamps event `t` (injected, testable). */
   elapsed(): number;
+  /**
+   * The page SDK's package version from its hello, when it sent one. Read to refuse an element
+   * state the page is too old to answer (see ELEMENT_STATE_SINCE). Undefined for a hand-wired page.
+   */
+  sdkVersion?: string | undefined;
   /**
    * Where the app is RIGHT NOW — the session's live URL, kept current across SPA navigation.
    *

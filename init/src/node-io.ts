@@ -4,6 +4,7 @@
  * command, not the MCP stdio transport.
  */
 
+import { terminalWidth, wrapForTerminal } from './diagnose/terminal-wrap.js';
 import {
   readFileSync,
   writeFileSync,
@@ -17,7 +18,7 @@ import {
 import { NodePlatform } from './detect/platform.js';
 import { join, dirname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import type { InitIo } from './run.js';
 import type { InitHost } from './host.js';
 import { windowsShellArg } from './register/windows-quote.js';
@@ -36,17 +37,29 @@ function shellSafe(args: readonly string[]): string[] {
 /**
  * Every program `init` is ever allowed to run.
  *
- * The set is closed and tiny — the four package managers, `npx`, and the Claude CLI — because those
- * are the only things the plan can ask for. It is a named constant for the same reason every other
- * wire string here is one, and it is CHECKED because of the shell: on Windows these spawn through
- * a shell, and a shell turns the command name into something the shell parses rather than a file it
- * executes. Arguments are quoted by `shellSafe`; the command name was the half nothing covered.
+ * The set is closed and tiny — the four package managers, `npx`, `corepack`, and the Claude CLI —
+ * because those are the only things the plan can ask for. It is a named constant for the same reason
+ * every other wire string here is one, and it is CHECKED because of the shell: on Windows these spawn
+ * through a shell, and a shell turns the command name into something the shell parses rather than a
+ * file it executes. Arguments are quoted by `shellSafe`; the command name was the half nothing
+ * covered.
+ *
+ * `corepack` runs the package manager, never IS it (see `preflight.ts`, #1149) — the allowlist has to
+ * name the actual program being spawned.
  *
  * A command outside this set is a programming error — the plan built something no branch of this
  * package can produce — so it throws rather than returning `false`, which would read to the caller
  * as "the command ran and failed" and hide the bug in a retry.
  */
-export const RUNNABLE_COMMANDS: readonly string[] = ['pnpm', 'yarn', 'bun', 'npm', 'npx', 'claude'];
+export const RUNNABLE_COMMANDS: readonly string[] = [
+  'pnpm',
+  'yarn',
+  'bun',
+  'npm',
+  'npx',
+  'corepack',
+  'claude',
+];
 
 /** The command, proven to be one of `RUNNABLE_COMMANDS` — never the caller's string. */
 function runnable(command: string): string {
@@ -82,7 +95,7 @@ function runnable(command: string): string {
 function spawnAllowed(
   command: string,
   args: readonly string[],
-  options: { cwd?: string; stdio: 'inherit' | 'ignore' },
+  options: { cwd?: string; stdio: SpawnSyncOptions['stdio']; encoding?: 'utf8' },
 ): ReturnType<typeof spawnSync> {
   const name = runnable(command);
   if (NodePlatform.WINDOWS !== process.platform) {
@@ -111,7 +124,11 @@ export function probeCli(command: string, args: readonly string[]): boolean {
   }
 }
 
-export function buildNodeIo(cwd: string, host: InitHost): InitIo {
+export function buildNodeIo(
+  cwd: string,
+  host: InitHost,
+  output: { stderr?: boolean } = {},
+): InitIo {
   // Project-relative by default; absolute paths (e.g. ~/.cursor/mcp.json) pass through unchanged.
   const abs = (rel: string): string => (isAbsolute(rel) ? rel : join(cwd, rel));
   return {
@@ -164,12 +181,20 @@ export function buildNodeIo(cwd: string, host: InitHost): InitIo {
     scoped(rel) {
       // The host travels with the re-rooted IO: a monorepo redirect re-enters `runInit` through
       // this, and an untraced, unreported inner run is the half of init that actually did the work.
-      return buildNodeIo(abs(rel), host);
+      return buildNodeIo(abs(rel), host, output);
     },
     exec(command, args) {
-      // Inherit stdio so the install's own progress is visible to the user.
-      const result = spawnAllowed(command, args, { cwd, stdio: 'inherit' });
+      // JSON callers reserve stdout for the result, including across package-manager subprocesses.
+      const result = spawnAllowed(command, args, {
+        cwd,
+        stdio: true === output.stderr ? ['inherit', 2, 2] : 'inherit',
+      });
       return 0 === result.status;
+    },
+    capture(command, args) {
+      const result = spawnAllowed(command, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
+      const text = (part: unknown): string => ('string' === typeof part ? part : '');
+      return { ok: 0 === result.status, output: `${text(result.stdout)}${text(result.stderr)}` };
     },
     /** One access check, rather than discovering it as an EACCES stack four phases later. */
     canWrite() {
@@ -186,7 +211,8 @@ export function buildNodeIo(cwd: string, host: InitHost): InitIo {
       return 0 === result.status;
     },
     print(line) {
-      process.stdout.write(`${line}\n`);
+      const stream = true === output.stderr ? process.stderr : process.stdout;
+      stream.write(`${wrapForTerminal(line, terminalWidth())}\n`);
     },
     host,
   };

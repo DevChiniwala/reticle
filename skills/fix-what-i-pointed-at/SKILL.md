@@ -3,7 +3,7 @@ name: fix-what-i-pointed-at
 description: Pick up the bugs a human flagged by pointing at them in the running app, each arriving with the element, the note they typed, and the source file and line. Use when the user says they marked or flagged something, when starting a session on an app someone has been clicking through, when a designer or PM has left feedback in the UI, or when the user describes a problem as "that button there" without saying which file.
 license: Apache-2.0
 metadata:
-  version: 3.3.0
+  version: 3.4.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -61,4 +61,4 @@ They pointed at "that button". Report on "the Pay button on checkout", with what
 
 ---
 
-Everything else: `curl https://docs.reticle.sh/llms.txt`. If a mark arrived without a usable source pointer, that is worth a `reticle_feedback` with `kind: "gap"`.
+Everything else: `curl https://docs.reticle.sh/llms.txt`. If a mark arrived without a usable source pointer, that is worth a `reticle_session { action: "feedback" }` with `kind: "gap"`.

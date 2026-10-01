@@ -42,6 +42,14 @@ describe('a11y', () => {
     expect(getStates(document.querySelector('button') as Element)).toContain(ElementState.DISABLED);
     expect(getStates(document.querySelector('input') as Element)).toContain(ElementState.CHECKED);
   });
+
+  it('reports pressed state from aria-pressed', () => {
+    render('<button aria-pressed="true">Bold</button><button aria-pressed="false">Italic</button>');
+    const bold = document.querySelector('[aria-pressed="true"]') as Element;
+    const italic = document.querySelector('[aria-pressed="false"]') as Element;
+    expect(getStates(bold)).toContain(ElementState.PRESSED);
+    expect(getStates(italic)).not.toContain(ElementState.PRESSED);
+  });
 });
 
 describe('snapshot', () => {
@@ -193,6 +201,15 @@ describe('query', () => {
     expect(enabled.matched).toBe(false);
     const disabled = matchQuery({ role: 'button', name: 'Submit' }, ElementState.DISABLED);
     expect(disabled.matched).toBe(true);
+  });
+
+  it('filters by pressed state (#1144)', () => {
+    render('<button aria-pressed="true">Bold</button><button aria-pressed="false">Italic</button>');
+    const pressed = matchQuery({ role: 'button', name: 'Bold' }, ElementState.PRESSED);
+    expect(pressed.matched).toBe(true);
+    expect(pressed.count).toBe(1);
+    const notPressed = matchQuery({ role: 'button', name: 'Italic' }, ElementState.PRESSED);
+    expect(notPressed.matched).toBe(false);
   });
 
   it('matches a dialog by role', () => {

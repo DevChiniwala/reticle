@@ -17,6 +17,7 @@ import { evalRoute } from './predicate-route.js';
 import { describeSuperseded } from './observed-in-window.js';
 import { evalElement, withTextProperty } from './predicate-element.js';
 import { evalState } from './predicate-state.js';
+import { evalCompare } from './predicate-compare.js';
 import {
   PredicateSchema,
   evalNet,
@@ -98,7 +99,22 @@ function annotateThrottledMiss(
   if (true !== session.throttled?.()) return result;
   if (decidedByAnAlreadyAnnotatedClause(predicate)) return result;
   if (failureRestsOnSeeing(predicate)) return result;
+  if (foundTextSplitAcrossChildren(result)) return result;
   return { ...result, inconclusive: THROTTLED_STARVED_NOTE };
+}
+
+/**
+ * Did the miss come with proof that the page rendered the very string it was looking for?
+ *
+ * The starved-tab caveat is for a page that may not have painted. A text miss that carries a
+ * split-text owner is the browser saying the string IS in the rendered page, split across one
+ * container's children — so the tab ran, and the failure is the locator's. Reported from Next's
+ * template: the throttle note led a response whose own near-miss named the heading holding the text,
+ * and the agent was sent to wait out a starvation that had not happened.
+ */
+function foundTextSplitAcrossChildren(result: EvalResult): boolean {
+  const evidence = result.evidence;
+  return 'object' === typeof evidence && null !== evidence && 'splitText' in evidence;
 }
 
 /**
@@ -320,6 +336,8 @@ async function evaluatePredicateRaw(
         counts === undefined ? events : events.filter((e) => !isAmbient(counts, ambientKeyOf(e)));
       return evalSettled(settleEvents, predicate, session.elapsed());
     }
+    case PredicateKind.COMPARE:
+      return evalCompare(session, events, predicate, diagnose);
     case PredicateKind.ALL_OF: {
       const results = clearStarvedWhenSiblingsSaw(
         predicate.predicates,
@@ -335,13 +353,16 @@ async function evaluatePredicateRaw(
       // that was happening.
       const failed = results.find((r) => !r.pass && r.inconclusive === undefined);
       if (failed !== undefined) {
+        // A conjunction is decided as soon as ANY clause is permanently false: nothing the
+        // others do later can rescue it. Scan all failed clauses, not just the first —
+        // `.find()` picks by array order, and the decided clause is not always first.
+        const anyDecided = results.some(
+          (r) => !r.pass && r.inconclusive === undefined && true === r.decided,
+        );
         return {
           pass: false,
           failureReason: failed.failureReason ?? 'a sub-predicate of allOf failed',
-          // A conjunction is decided as soon as ONE clause is: nothing the others do later can
-          // rescue it. This is what makes the early exit reach real calls, since an exact count is
-          // usually asserted alongside the UI change it is meant to accompany.
-          ...(true === failed.decided ? { decided: true } : {}),
+          ...(anyDecided ? { decided: true } : {}),
           evidence: results,
         };
       }
@@ -364,7 +385,16 @@ async function evaluatePredicateRaw(
       // never read: the unreadable clause might have been the one that would have matched.
       const unreadable = results.find((r) => r.inconclusive !== undefined);
       if (unreadable !== undefined) return unreadableComposite(unreadable, results);
-      return { pass: false, failureReason: 'no sub-predicate of anyOf matched', evidence: results };
+      // A disjunction is decided when EVERY clause is permanently false: no branch can
+      // ever become true, so waiting out the budget buys nothing. By this point every
+      // result is a non-inconclusive failure (passing and inconclusive returned above).
+      const allDecided = results.every((r) => true === r.decided);
+      return {
+        pass: false,
+        failureReason: 'no sub-predicate of anyOf matched',
+        ...(allDecided ? { decided: true } : {}),
+        evidence: results,
+      };
     }
     case PredicateKind.NOT: {
       const inner = await evaluatePredicate(
@@ -401,7 +431,8 @@ const POLL_INTERVAL_MS = 150;
 const MIN_RECHECK_GAP_MS = 25;
 
 /**
- * How long an exact-count predicate keeps watching AFTER it first reads true.
+ * How long an exact-count predicate, or one claiming something is absent, keeps watching AFTER it
+ * first reads true.
  *
  * A count only rises while a window is open, so "exactly N" is a statement about the END of one and
  * cannot be settled early — yet every wait here resolves the moment a check passes. Live, on a real
@@ -442,6 +473,22 @@ function assertsExactCount(predicate: Predicate): boolean {
 }
 
 /**
+ * Does this predicate claim that something did NOT happen: an `absent` check, or a `not`?
+ *
+ * Such a claim is about the END of a window for the same reason an exact count is, and reads true
+ * at the start of every window by construction. Settled on its first reading, a clean-console check
+ * passed on a page whose `console.error` landed a few milliseconds later, which the bench measured
+ * once the page ran slower. It holds for the same bounded window as a count; see COUNT_CONFIRM_MS.
+ */
+function claimsAbsence(predicate: Predicate): boolean {
+  if (PredicateKind.NOT === predicate.kind) return true;
+  if (PredicateKind.ALL_OF === predicate.kind || PredicateKind.ANY_OF === predicate.kind) {
+    return predicate.predicates.some(claimsAbsence);
+  }
+  return 'absent' in predicate && true === predicate.absent;
+}
+
+/**
  * Evaluate now, else wait for it to become true (on each event + a poll) until timeout. `since` is
  * the event-time floor (see evaluatePredicate) so a waiter cannot resolve on a stale buffered event.
  */
@@ -458,6 +505,9 @@ export function waitForPredicate(
   const reader = withinBudget(session, () => deadline - session.elapsed());
   return new Promise<EvalResult>((resolve) => {
     let done = false;
+    // Released in `finish`, on every exit path. Without it a flood inside the window can evict the
+    // event the predicate is armed on, and the verdict blames the app (#668).
+    const releaseWindow = session.protectWindow?.(since);
     // A read that threw never looked at the app: the page did not answer, or went away. That is
     // "could not tell", not "looked and it was false", so it is inconclusive, which the verdict rule
     // turns into unknown. As a plain false it was graded assertion_failed: a command timeout on a
@@ -473,8 +523,9 @@ export function waitForPredicate(
     let cooldownTimer: ReturnType<typeof setTimeout> | undefined;
     /** One-shot re-check timed to when a time-based predicate could first pass. See retryAfterMs. */
     let hintTimer: ReturnType<typeof setTimeout> | undefined;
-    // An exact-count wait keeps watching after it first reads true — see COUNT_CONFIRM_MS.
-    const holdsForCount = assertsExactCount(predicate);
+    // An exact count or an absence keeps watching after it first reads true — see COUNT_CONFIRM_MS
+    // and claimsAbsence.
+    const holdsForCount = assertsExactCount(predicate) || claimsAbsence(predicate);
     let confirming = false;
     let confirmTimer: ReturnType<typeof setTimeout> | undefined;
     /** Report a wait that could not run, and END it — see guardedCheck. */
@@ -493,6 +544,7 @@ export function waitForPredicate(
     const finish = (result: EvalResult): void => {
       if (done) return;
       done = true;
+      releaseWindow?.();
       unsub();
       unsubDisconnect?.();
       clearInterval(interval);
@@ -632,6 +684,13 @@ export function waitForPredicate(
     const timer = setTimeout(() => {
       void evaluatePredicate(reader, predicate, since, true, baselines)
         .then((r) => {
+          // A count or an absence that already read true and was holding to confirm: the caller's
+          // budget IS the end of its window, so this reading is the answer, whichever way it went.
+          // Forcing it to a fail would turn every honest absence under a short budget into a red.
+          if (confirming) {
+            finish(r);
+            return;
+          }
           // Spread the near-miss, do NOT hand-copy two fields. The oracle computes observed / expected
           // / assertion — the structured cause the repair literature ranks above prose — and the old
           // `{ pass, evidence, failureReason }` construction DISCARDED them on every timed-out wait and

@@ -1,7 +1,7 @@
 {
   "name": "@reticlehq/server",
-  "version": "3.3.0",
-  "description": "Reticle bridge + MCP server. Hosts the browser WS endpoint and exposes MCP tools to the coding agent.",
+  "version": "3.4.0",
+  "description": "Reticle CLI, bridge and MCP server: a coding agent drives your running web app from the inside and gets a verdict with evidence, for change verification, access control, accessibility, performance and SEO checks.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,7 +29,7 @@
     "prepack": "node ../scripts/prepare-dist.mjs --clean dist && tsc -b --force && node ../scripts/alias-dist.mjs && node ../scripts/prepare-dist.mjs dist && node ../scripts/stamp-issuer-key.mjs && node ../scripts/pack-docs.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "@reticlehq/browser": "workspace:*",
     "@reticlehq/core": "workspace:*",
     "@reticlehq/engine": "workspace:*",
@@ -42,11 +42,11 @@
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.5.13",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "optionalDependencies": {
     "pixelmatch": "^7.2.0",
-    "playwright": "^1.62.1",
+    "playwright": "^1.63.0",
     "pngjs": "^7.0.0"
   },
   "license": "FSL-1.1-ALv2",
@@ -70,6 +70,7 @@
     "mcp",
     "ai-agents",
     "testing",
+    "verification",
     "cli"
   ],
   "reticle": {

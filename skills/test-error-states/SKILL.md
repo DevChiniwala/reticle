@@ -3,7 +3,7 @@ name: test-error-states
 description: Force the states a happy-path run never reaches (a failing API, an empty list, a slow request, a timeout, an expired session, a toast that auto-dismisses) and check the UI actually handles them. Use when error handling was written but never run, when a loading or empty state needs verifying, when a bug only happens on a slow connection, or when a timer, poll, debounce or retry needs testing without sleeping.
 license: Apache-2.0
 metadata:
-  version: 3.3.0
+  version: 3.4.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -68,7 +68,7 @@ The recovery, not the absence of a crash:
 
 1. The error is **shown to the user**: a specific element, not just "the page did not blank".
 2. The app **stayed usable**: retry works, the form still has its input, navigation is not stuck.
-3. **State is honest**: `reticle_state` shows the failure, not a half-applied optimistic update. A UI that rolled back visually while the store kept the optimistic value is the classic bug here, and only the store read finds it.
+3. **State is honest**: `reticle_look { action: "state" }` shows the failure, not a half-applied optimistic update. A UI that rolled back visually while the store kept the optimistic value is the classic bug here, and only the store read finds it.
 4. **No uncaught error** in the console.
 
 ## Honesty

@@ -1,6 +1,6 @@
 {
   "name": "@reticlehq/vite-plugin",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Vite plugin for Reticle: dev-only source-map stamping plus auto-injected reticle.connect(). apply:'serve' guarantees it never ships to production.",
   "type": "module",
   "license": "Apache-2.0",
@@ -57,7 +57,7 @@
     "@reticlehq/react": "workspace:*",
     "@types/babel__core": "^7.20.5",
     "esbuild": "^0.28.2",
-    "svelte": "^5.56.10",
+    "svelte": "^5.57.1",
     "vite": "^8"
   },
   "peerDependencies": {

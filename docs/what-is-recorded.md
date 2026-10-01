@@ -5,7 +5,7 @@ description: What Reticle keeps on your machine, what is redacted, and what it t
 
 Reticle drives your app and reads what it did. That means it holds real content from real pages, so this page says exactly what it keeps, where it keeps it, and what it takes to make any of it leave.
 
-If you read one line: **a verdict is entirely local and needs no account.** Nothing is sent anywhere until you run `reticle login` and `reticle link`. Without them there is nowhere for anything to go.
+If you read one line: **a verdict is entirely local and needs no account.** Nothing from your project is sent anywhere until you run `reticle login` and `reticle link`. Without them there is nowhere for it to go. (Anonymous usage counts, which carry nothing from your app, are separate and described in [Telemetry](telemetry.md).)
 
 ## On your machine
 
@@ -31,7 +31,7 @@ Network bodies are **not** captured by default. Page content that reaches a verd
 
 ## What leaves, only if you ask
 
-`reticle login` signs this machine in. `reticle link` binds one repo to one cloud project. Until both have happened, `reticle push` has nothing to talk to and the sync path is a no-op. The code calls this the no-phone-home default.
+`reticle login` signs this machine in. `reticle link` binds one repo to one cloud project. Until both have happened, or `RETICLE_API_KEY` is set in the environment, `reticle push` has nothing to talk to and the sync path is a no-op. The code calls this the no-phone-home default. A key in the environment is how CI syncs with no login and no link, and it goes to the hosted service unless `RETICLE_CLOUD_URL` names another host.
 
 Once linked, you choose what syncs:
 

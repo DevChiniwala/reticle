@@ -2,10 +2,10 @@
  * Do-and-verify: give an agent a broken app, a way to edit it, a way to drive it, and one job —
  * fix it AND confirm the fix works. Then ask something OUTSIDE the run whether it actually does.
  *
- * ## Why this exists when a fix-loop ablation already does
+ * ## Why this replaced the fix-loop ablation
  *
- * `bench/fix-loop` answers "is it fixed?" with `!fileText.includes(marker)`. Its own README calls
- * behaviour-level verification the upgrade. That gap is not a detail here: an agent that deletes the
+ * The fix-loop ablation (removed; it is in git history) answered "is it fixed?" with
+ * `!fileText.includes(marker)`. That gap is not a detail here: an agent that deletes the
  * marker and leaves the feature broken scores as a CORRECT FIX under a string check, so a
  * string-checked benchmark is structurally incapable of seeing a false green — and the false green
  * is the entire question.
@@ -98,6 +98,10 @@ const TASKS = {
     'Users report that on the Deployments page, typing in the service filter box no longer filters the table — the same rows stay on screen whatever they type.',
   'broken-form-validation':
     'Users report that the new-deployment form accepts a service name that is only spaces, and lets them submit it.',
+  // The DEEP one: every step on the way works, so only a check made at the END of the journey can
+  // tell a real fix from a claimed one. Nothing measured depth before it.
+  'deploy-never-ships':
+    'Users report that a new deployment never goes live — the row they created stays "building", even after a notification says it is live.',
 };
 
 /**

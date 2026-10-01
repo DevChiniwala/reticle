@@ -32,6 +32,13 @@ export const MCP_SHUTDOWN_EVENT = 'reticle-shutdown';
 /** Local-only daemon introspection — `reticle status` GETs this for sessions + health at a glance. */
 export const STATUS_PATH = '/status';
 /**
+ * Query flag on STATUS_PATH: the caller (a running `reticle init`) is waiting on this daemon, so it
+ * must not idle out yet. Without it the daemon init started exited mid-wait on a slow desktop build.
+ */
+export const STATUS_HOLD_QUERY = 'hold';
+/** How long one hold lasts. The holder renews it well inside this window for as long as it waits. */
+export const STATUS_HOLD_MS = 60_000;
+/**
  * Local-only drive request — `reticle drive <url>` POSTs `{url}` here when a daemon already owns the
  * bridge port, and gets back the pooled session that daemon opened. The CLI asks instead of binding,
  * so the two never fight over the port. Same trust tier as STATUS_PATH.
@@ -224,7 +231,10 @@ export const ReticleEnv = {
   API_KEY: 'RETICLE_API_KEY',
   /** The name this key had until 2026-09. Still honoured; see `apiKeyFrom()`. */
   CLOUD_KEY: 'RETICLE_CLOUD_KEY',
+  /** The platform host. Read through `cloudUrlFrom()`, which also accepts `URL`. */
   CLOUD_URL: 'RETICLE_CLOUD_URL',
+  /** The short name for `CLOUD_URL`, which people type first. `CLOUD_URL` wins when both are set. */
+  URL: 'RETICLE_URL',
 } as const;
 
 /**
@@ -249,6 +259,51 @@ export function apiKeyFrom(env: Record<string, string | undefined>): string | un
   const legacy = env[ReticleEnv.CLOUD_KEY];
   return legacy !== undefined && 0 < legacy.length ? legacy : undefined;
 }
+
+/** The platform URL, under either name — one function so no caller forgets the second. */
+export function cloudUrlFrom(env: Record<string, string | undefined>): string | undefined {
+  const canonical = env[ReticleEnv.CLOUD_URL];
+  if (canonical !== undefined && 0 < canonical.length) return canonical;
+  const short = env[ReticleEnv.URL];
+  return short !== undefined && 0 < short.length ? short : undefined;
+}
+
+/** The hosted platform: where every client dials when nothing names another host. */
+export const DEFAULT_PLATFORM_URL = 'https://app.reticle.sh';
+
+/** The platform URL from the environment, else the hosted service. No trailing slash. */
+export function platformUrlFrom(env: Record<string, string | undefined>): string {
+  // A loop, not /\/+$/: that pattern is polynomial on a value made of many slashes.
+  let url = cloudUrlFrom(env) ?? DEFAULT_PLATFORM_URL;
+  while (url.endsWith('/')) url = url.slice(0, -1);
+  return url;
+}
+
+/**
+ * The platform credential the environment carries, or undefined when it carries no key.
+ *
+ * The key alone is enough: the URL falls back to the hosted service. Every reader of the env key
+ * goes through here, because each of them used to demand a URL as well, and a CI job that set only
+ * the key — which is what the platform tells it to do — silently reached nothing.
+ */
+export function platformCredentialFrom(
+  env: Record<string, string | undefined>,
+): { url: string; apiKey: string } | undefined {
+  const apiKey = apiKeyFrom(env);
+  return apiKey === undefined ? undefined : { url: platformUrlFrom(env), apiKey };
+}
+
+/**
+ * How many runs one `POST /v1/sync` may carry, by count and by serialized size.
+ *
+ * One request used to carry every unsent run, so a backlog bigger than the platform's body limit
+ * was refused whole, offered again next cycle, and never caught up. The byte bound sits well under
+ * that limit because flows, capsules and derived records ride in the first request too.
+ */
+export const SYNC_BATCH_LIMITS = {
+  MAX_RUNS: 50,
+  MAX_BYTES: 4 * 1024 * 1024,
+} as const;
 
 /** Hard transport bounds shared by the browser and bridge. */
 export const TRANSPORT_LIMITS = {
@@ -398,6 +453,8 @@ export const ReticleDir = {
   AMBIENT_FILE: 'ambient.json',
   /** per-flow flake ledger — replay outcomes that decide intermittent-failure quarantine. */
   FLAKE_FILE: 'flake.json',
+  /** The app-wide coverage ledger — see server features/exhaust/ledger.ts. */
+  COVERAGE_FILE: 'coverage.json',
   /**
    * the project's cloud binding — .reticle/cloud.json, written by `reticle link`. Git-checked and
    * non-secret: the project id, the API origin, and where its dashboard lives. The KEY lives in
@@ -748,7 +805,6 @@ export const ActionType = {
    * merely looks like zoom would report it caught while the layout viewport never changed.
    */
   ZOOM: 'zoom',
-  WEBMCP: 'webmcp',
 } as const;
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
 
@@ -792,14 +848,15 @@ export const ElementState = {
   DISABLED: 'disabled',
   CHECKED: 'checked',
   EXPANDED: 'expanded',
+  PRESSED: 'pressed',
   FOCUSED: 'focused',
   PRESENT: 'present',
   /**
    * Inside the viewport right now (getBoundingClientRect intersects the window). Distinct from
-   * `visible`, which folds only aria-hidden/[hidden]/display/visibility/opacity and so is already
-   * true for content below the fold of a scrolling container. Without this, `scrollIntoView` is
-   * ungradeable: the target satisfied `visible`/`present` before the scroll, so act_and_wait
-   * returns already_true. (#398)
+   * `visible`, which folds only aria-hidden/[hidden]/display/visibility/opacity and a closed
+   * `<details>` ancestor, and so is already true for content below the fold of a scrolling
+   * container. Without this, `scrollIntoView` is ungradeable: the target satisfied
+   * `visible`/`present` before the scroll, so act_and_wait returns already_true. (#398)
    */
   IN_VIEWPORT: 'inViewport',
 } as const;

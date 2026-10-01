@@ -41,7 +41,7 @@ import {
   scrubKnownSecrets,
   type SeedStorage,
 } from '@reticlehq/core';
-import { ReticleTool } from '@reticlehq/core';
+import { ReticleTool, SESSION_HEALTH } from '@reticlehq/core';
 import type { ToolDef, ToolDeps } from './tool-kit.js';
 import { asString } from '@reticlehq/core';
 import { chromiumHint } from '@/command/cli/doctor/browser/chromium-hint.js';
@@ -201,6 +201,11 @@ export function scrubSeedFromError(text: string, seed?: unknown): string {
     }
   }
   return out;
+}
+
+/** True for a Playwright `storageState()` export (`{ origins: [...] }`), not our seed shape. */
+function looksLikeStorageStateExport(seed: unknown): boolean {
+  return Array.isArray((seed as { origins?: unknown } | null)?.origins);
 }
 
 /**
@@ -615,11 +620,16 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     if (seedStorageArg !== undefined) {
       const parsed = SeedStorageSchema.safeParse(seedStorageArg);
       if (!parsed.success) {
-        const issuesMsg = scrubSeedFromError(
-          parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', '),
+        const msg = scrubSeedFromError(
+          parsed.error.issues
+            .map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message))
+            .join(', '),
           seedStorageArg,
         );
-        throw new Error(`reticle_lease{action:"acquire"} seedStorage is invalid: ${issuesMsg}`);
+        const hint = looksLikeStorageStateExport(seedStorageArg)
+          ? 'This looks like a Playwright storageState() export ({ origins, cookies }); seedStorage takes { local?, session?, cookies? } (map origins[].localStorage into `local`).'
+          : 'Expected { local?, session?, cookies? }.';
+        throw new Error(`reticle_lease{action:"acquire"} seedStorage is invalid: ${msg}. ${hint}`);
       }
       validatedSeed = parsed.data;
     }
@@ -835,9 +845,7 @@ const PREFER_EXISTING_NOTE =
  * is the right trade for a broadcast and the wrong one here, where a single `[0]` is handed back as
  * "drive this instead". With `projectId` undefined — and it is an OPTIONAL argument that an
  * acquiring agent has no reason to pass — every non-leased session qualified and the answer was
- * whichever the map yielded first. Measured against a real daemon: leasing `localhost:4312`
- * recommended a Phanpy tab on `:5173`, so an agent that complied would have driven a different
- * application and reported a verdict about it.
+ * whichever the map yielded first: leasing `localhost:4312` recommended a tab on `:5173`, another app.
  *
  * So this narrows by the one thing a lease always knows: the ORIGIN it is being taken against.
  * `projectId` still narrows further when given. Nothing is recommended when nothing matches, which
@@ -856,6 +864,8 @@ function liveTabFor(
     const candidates = deps.sessions
       .all()
       .filter((session) => session.url !== undefined && originOf(session.url) === wanted)
+      // Nor a tab gone silent: one last heard from 105s earlier was named here and answered nothing.
+      .filter((session) => (session.lastSeenMs?.() ?? 0) <= SESSION_HEALTH.STALE_THRESHOLD_MS)
       .map((session) => ({ id: session.id, projectId: session.projectId }));
     return watchersToNotify(candidates, pool.leasedSessionIds(), projectId)[0];
   } catch {

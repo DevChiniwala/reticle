@@ -246,7 +246,24 @@ const DIST_ENTRY = join(PACKAGE_ROOT, 'dist', 'index.js');
  * with the lazy panel; it moved to the `@reticlehq/core/hud` subpath and left. Raised by 1,000 over
  * the measurement, per the note above.
  */
-const MAX_FIRST_LOAD_BYTES = 243_400;
+/*
+ * 243_400 -> 244_500, for driving SVG targets and ARIA checkboxes. 602 B measured on this tree
+ * (242,895 -> 243,497): actions accept an SVGElement, and check/uncheck click a `role="checkbox"`
+ * or `role="switch"` and refuse to report success when `aria-checked` did not move. Both run where
+ * the page is. Raised by 1,000 over the measurement, per the note above.
+ */
+/*
+ * 244_500 -> 245_700, for summarizing data: and blob: URLs. 411 B measured on this tree
+ * (244,279 -> 244,690): the shared network URL redaction now collapses an embedded URL to its type
+ * and size, and that redaction runs where the page records the request. Raised by 1,000 over the
+ * measurement, per the note above.
+ */
+/*
+ * 245_700 -> 246_700, for the snapshot's depth-cut marker (this branch) beside the store snapshots
+ * that let a Pinia or Svelte mutation diff: together 245,705 B measured on main with both, over the
+ * old ceiling by 5. Raised by 1,000 over the measurement, per the note above.
+ */
+const MAX_FIRST_LOAD_BYTES = 246_700;
 /*
  * Raised a fifth time, 233_300 -> 233_400, for a route to be assertable in a SAVED flow. 57 B.
  *

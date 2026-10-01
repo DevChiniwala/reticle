@@ -18,7 +18,7 @@
  */
 
 import { z } from 'zod';
-import { ReticleEnv, apiKeyFrom } from '@reticlehq/core';
+import { ReticleEnv, platformCredentialFrom } from '@reticlehq/core';
 import type { HarnessTool, HistoryEntry, ModelDriver, ModelTurn, ToolRequest } from './harness.js';
 import type { HarnessFetch } from './driver.js';
 
@@ -94,11 +94,9 @@ export function openAiOptionsFromEnv(
   const direct = env[ReticleEnv.HARNESS_OPENAI_KEY];
   if (direct !== undefined && 0 < direct.length) return withModel({ apiKey: direct });
 
-  const cloudKey = apiKeyFrom(env);
-  const cloudUrl = env[ReticleEnv.CLOUD_URL];
-  if (cloudKey === undefined || 0 === cloudKey.length) return undefined;
-  if (cloudUrl === undefined || 0 === cloudUrl.length) return undefined;
-  return withModel({ apiKey: cloudKey, baseUrl: cloudUrl });
+  const cloud = platformCredentialFrom(env);
+  if (cloud === undefined) return undefined;
+  return withModel({ apiKey: cloud.apiKey, baseUrl: cloud.url });
 }
 
 /** A message as it goes out. `unknown` values are the model's own arguments, echoed back. */
@@ -175,18 +173,31 @@ function parseArgs(raw: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Where a Chat Completions call goes. The platform does not expose `/v1/chat/completions`; it
+ * exposes its own path and forwards. A base URL that is not OpenAI's is the platform's, which is
+ * the only other thing this talks to.
+ */
+export function openAiCompletionsUrl(options: Pick<OpenAiDriverOptions, 'baseUrl'>): string {
+  const baseUrl = options.baseUrl ?? DEFAULT_OPENAI_BASE_URL;
+  return `${baseUrl}${DEFAULT_OPENAI_BASE_URL === baseUrl ? OPENAI_PATH : PLATFORM_PATH}`;
+}
+
+/**
+ * The small GPT models refuse function tools on Chat Completions while reasoning is on: measured,
+ * `gpt-5.6-luna` answers 400 to the first request that carries tools. A driving turn is a choice,
+ * not a plan, so no hidden reasoning is also the right depth and the cheapest one.
+ */
+export const OPENAI_REASONING_EFFORT = 'none';
+
 /** Build a driver backed by Chat Completions. */
 export function openAiDriver(options: OpenAiDriverOptions): ModelDriver {
   const model = options.model ?? DEFAULT_OPENAI_MODEL;
-  const baseUrl = options.baseUrl ?? DEFAULT_OPENAI_BASE_URL;
   const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
-  // The platform does not expose `/v1/chat/completions`; it exposes its own path and forwards. A
-  // base URL that is not OpenAI's is the platform's, which is the only other thing this talks to.
-  const path = DEFAULT_OPENAI_BASE_URL === baseUrl ? OPENAI_PATH : PLATFORM_PATH;
 
   return {
     async turn(input): Promise<ModelTurn> {
-      const response = await doFetch(`${baseUrl}${path}`, {
+      const response = await doFetch(openAiCompletionsUrl(options), {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -195,6 +206,7 @@ export function openAiDriver(options: OpenAiDriverOptions): ModelDriver {
         body: JSON.stringify({
           model,
           max_completion_tokens: MAX_TOKENS,
+          reasoning_effort: OPENAI_REASONING_EFFORT,
           tools: input.tools.map(toWireTool),
           messages: [{ role: 'system', content: input.system }, ...toWireMessages(input.history)],
         }),

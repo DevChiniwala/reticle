@@ -56,6 +56,15 @@ export const BUFFER_EVICTION_WARNING =
 export const NO_SESSION_CONNECTED_ERROR =
   "no browser session connected. Two things to check: (1) your app is running with @reticlehq/browser enabled, and (2) it points at THIS daemon's port — a mismatch between the app's reticle({ port }) / VITE_RETICLE_WS_URL and the daemon's RETICLE_PORT is the usual cause. Call reticle_sessions for the diagnosis — it names which of these it is, and what to do next — rather than retrying this call.";
 
+/**
+ * Explains an unconfirmed navigation that did reconnect, but at a different URL.
+ *
+ * The URL itself is supplied by the navigation result as `landedOn`; this constant keeps the
+ * surrounding explanation on the core wire-copy side rather than embedding it in the server tool.
+ */
+export const NAVIGATION_REDIRECT_NOTE =
+  'The navigation arrived, but the browser landed at a different URL. The app may have redirected the navigation, for example because authentication or another route guard changed the destination.';
+
 /** Surfaced on act/assert results when the target tab is throttled. */
 export const THROTTLED_WARNING =
   'tab throttled; timer/rAF/pointer gestures may silently no-op; refocus before driving';
@@ -68,7 +77,7 @@ export const THROTTLED_WARNING =
  */
 export const THROTTLED_STARVED_NOTE =
   'this tab is throttled and has not rendered; a miss here is not evidence the UI is absent. ' +
-  'acquire a scriptable context with reticle_run { tool: "reticle_lease", action: "acquire", url } ' +
+  'acquire a scriptable context with reticle_run { tool: "reticle_lease", args: { action: "acquire", url } } ' +
   '(the human can run `reticle drive <url>` if they have a shell)';
 
 /**
@@ -169,7 +178,7 @@ export const DESKTOP_WINDOW_BACKGROUNDED =
   "this app window is in the background, and a backgrounded webview clamps its timers and rAF — a synthetic action can land on a page that never advances. Bring the app window to the front and retry. A lease is NOT the answer for a desktop app: it opens a browser context, which has none of this app's IPC or commands.";
 
 export const HIDDEN_TAB_RECOMMENDATION =
-  'tab hidden and may be un-focusable from here; timers and rAF are clamped in a background tab, so an action can land on a page that never advances. Refocus it, or acquire a guaranteed scriptable context yourself with `reticle_run { tool: "reticle_lease", action: "acquire", url }` (a human can equivalently run `reticle drive <url>`) — ' +
+  'tab hidden and may be un-focusable from here; timers and rAF are clamped in a background tab, so an action can land on a page that never advances. Refocus it, or acquire a guaranteed scriptable context yourself with `reticle_run { tool: "reticle_lease", args: { action: "acquire", url } }` (a human can equivalently run `reticle drive <url>`) — ' +
   LEASE_IS_INVISIBLE_NOTE;
 
 /**

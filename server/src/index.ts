@@ -4,7 +4,7 @@ import { fetchPlatformConfig } from '@/features/harness/platform-config.js';
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { linkedCloudPort } from './memory/cloud/cloud-config.js';
+import { linkedCloudPort, platformEnvPort } from './memory/cloud/cloud-config.js';
 import { attachCloudSync } from './memory/cloud/sync-daemon.js';
 import { wireHooks } from './hooks/hook-commands.js';
 import {
@@ -13,7 +13,10 @@ import {
   projectCandidates,
 } from '@reticlehq/core/artifacts';
 import { discoverProjectConfigs } from './command/cli/config/config-discovery.js';
-import { artifactRootResolver } from './memory/project/artifact-root-resolver.js';
+import {
+  artifactRootResolver,
+  projectDirectoryFor,
+} from './memory/project/artifact-root-resolver.js';
 import type { Server } from 'node:http';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -40,10 +43,12 @@ import type { StartOptions } from './start-options.js';
 export type { StartOptions } from './start-options.js';
 import { Bridge } from './portal/bridge/bridge.js';
 import { sdkFixForDirectory } from './command/version/sdk-fix.js';
+import { connectionSkew } from './command/version/version-nudge.js';
 import { SERVER_VERSION } from './command/version/identity/server-version.js';
 import { BaselineStore } from './memory/project/baselines.js';
 import { RecordingStore } from './language/flows/recording/tape/recordings.js';
 import { initImpact } from './memory/impact/impact-recorder.js';
+import { flowAuthor } from './language/flows/flow-author.js';
 import { FlowStore } from './language/flows/flows.js';
 import { buildFlowChips } from './language/flows/flow-scope.js';
 import { ProjectStore } from './memory/project/project-store.js';
@@ -65,7 +70,7 @@ import {
   MCP_DISCONNECT_SUMMARY,
 } from './portal/session/session-reaper.js';
 import { wireSessionScope } from './portal/session/no-session-watch.js';
-import { buildIdlePredicate } from './command/daemon/lifetime/daemon-usefulness.js';
+import { buildIdlePredicate, noteSetupHold } from './command/daemon/lifetime/daemon-usefulness.js';
 import { resolveToolSurface } from './surface/tools/tool-surface.js';
 import { statusPayload } from './status-payload.js';
 import { CdpRealInputProvider, LaunchedRealInputProvider } from './portal/input/real-input.js';
@@ -85,7 +90,7 @@ import {
 } from './command/cli/ports/resolve/cli-port.js';
 import { hasAnyProjectConnectedBefore } from './memory/recall/prior/connection-memory.js';
 import { reticleStateHome } from './command/daemon/daemon.js';
-import { probeChromium } from './command/cli/doctor/browser/chromium-hint.js';
+import { probeLaunchableChromium } from './launch-chromium.js';
 import { attachJournal } from './wire-journal.js';
 import { reportOnboardingStep } from './telemetry/onboarding-funnel.js';
 import { AMBIENT_RECORDING } from './language/flows/recording/tape/recordings.js';
@@ -121,6 +126,20 @@ export type { ToolDeps, ToolDef } from './surface/tools/tools.js';
 export { createToolInvoker, UNKNOWN_TOOL_ERROR } from './surface/tools/tool-invoker.js';
 export { runTool, SESSION_BOUND_TOOLS, SESSION_EXEMPT_TOOLS } from './surface/tools/invoke-tool.js';
 export type { ToolInvoker } from './surface/tools/tool-invoker.js';
+
+/**
+ * The port-presence check the CLI commands (`drive`, `verify`, `status`, `doctor`, `kill`) all share,
+ * re-exported so a consumer embedding `start()` in its own process can refuse a taken port the same
+ * honest way instead of letting a raw `EADDRINUSE` stack out — the gap `@reticlehq/test`'s
+ * `bootSession()` had (reticlehq/reticle#1141): it called `start()` directly with no pre-flight probe.
+ */
+export {
+  probePresence,
+  describePresence,
+  PortPresence,
+} from './command/daemon/binding/port-presence.js';
+export { probeDaemon } from './surface/mcp/proxy/proxy-daemon-probe.js';
+export { fetchStatus } from './command/daemon/binding/daemon-status-probe.js';
 export { BaselineStore, normalizeLines, diffLines } from './memory/project/baselines.js';
 export { RecordingStore } from './language/flows/recording/tape/recordings.js';
 export type { RecordedStep, CompiledProgram } from './language/flows/recording/tape/recordings.js';
@@ -312,12 +331,12 @@ async function resolveRealInput(
 /** Start the Reticle bridge (browser WS endpoint) and, by default, the MCP stdio server. */
 
 /**
- * The SDK-upgrade sentence for THIS project's package.json, evaluated at each HELLO so a
- * just-edited manifest is what we name. Falls back to the framework-neutral sensor when cwd is
- * not an app.
+ * The SDK-upgrade sentence for the package.json of the project the page announced, evaluated at
+ * each HELLO so a just-edited manifest is what we name. The daemon's cwd only when that project's
+ * directory is unknown, and the framework-neutral sensor when that is not an app either (#1135).
  */
-function sdkFixForCwd(): string {
-  return sdkFixForDirectory(SERVER_VERSION, process.cwd());
+function sdkFixForProject(projectId?: string): string {
+  return sdkFixForDirectory(SERVER_VERSION, projectDirectoryFor(projectId) ?? process.cwd());
 }
 
 /**
@@ -360,6 +379,15 @@ function knownProjectRoots(): string[] {
   return [...roots];
 }
 
+/** This project's platform credential (stored, else the env key), as the env the platform readers take. */
+const platformEnvFor = (root: string | undefined) =>
+  platformEnvPort(
+    createNodeFileSystem(),
+    root ?? join(process.cwd(), ReticleDir.ROOT),
+    homedir(),
+    process.env,
+  );
+
 export async function start(options: StartOptions = {}): Promise<RunningServer> {
   const port = options.port ?? RETICLE_DEFAULT_PORT;
   // Open the user's impact record before anything can connect. Not inside the MCP branch: a daemon
@@ -370,14 +398,16 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     // The daemon owns both sides of this seam, so it is the layer that may join them: the cache
     // lives in cloud memory, the platform read lives in the harness feature, and neither is allowed
     // to reach for the other.
-    config: harnessConfigSource(() => fetchPlatformConfig(process.env)),
+    config: harnessConfigSource(async () =>
+      fetchPlatformConfig(await platformEnvFor(options.reticleRoot)()),
+    ),
   });
   const uninstallHooks = wireHooks(
     options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT),
     readProjectId(process.cwd()),
   );
   const security = await resolveBridgeSecurityWithAutoToken(options);
-  const bridge = new Bridge({ port, sdkFix: sdkFixForCwd, ...security });
+  const bridge = new Bridge({ port, sdkFix: sdkFixForProject, ...security });
   // Server-authoritative liveness: a Node-side reaper (immune to browser throttling) ends sessions
   // whose agent has gone idle, so a forgotten/crashed agent never leaves the HUD "running" forever.
   const reaper = new SessionReaper(bridge.sessions);
@@ -422,6 +452,7 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
       takeAmbientTape: () => recordings.stop(AMBIENT_RECORDING),
       reportStep: reportOnboardingStep,
       flows,
+      author: flowAuthor,
     });
     const project = new ProjectStore(fs, reticleRoot, { now });
     attachRouteLearning(bridge, projectStoreResolver(fs, project, reticleRoot, now));
@@ -458,10 +489,11 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
       project,
       fs,
       reticleRoot,
+      linkedCloud: linkedCloudPort(fs, reticleRoot, homedir(), process.env),
       artifactRootFor: artifactRootResolver(reticleRoot),
       now,
       bridgePort: port,
-      browserProbe: probeChromium,
+      browserProbe: probeLaunchableChromium,
       // The daemon's OWN project, so a tool can tell "this session is mine" from "this session
       // belongs to a sibling app under the same daemon". contract_save refuses on the second.
       ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }),
@@ -470,7 +502,12 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     const server = createMcpServer(
       realInput !== undefined ? { ...deps, realInput } : deps,
       profile,
-      hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
+      // A session live RIGHT NOW is stronger evidence than the durable memory, which can be empty or
+      // stale for a project the plugin wired without writing `.reticle.json` (see connection-memory.ts's
+      // KNOWN LIMIT). Without this OR, that project's `initialize` led with the first-install steps
+      // while a real session was already connected — see #1138.
+      bridge.sessions.count() > 0 ||
+        hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
     );
     // When the agent (the MCP client) disconnects cleanly, end every active session at once so the
     // HUD doesn't linger. (If the agent instead KILLS this process, the WS dies and the browser
@@ -516,12 +553,19 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     // The daemon owns both sides of this seam, so it is the layer that may join them: the cache
     // lives in cloud memory, the platform read lives in the harness feature, and neither is allowed
     // to reach for the other.
-    config: harnessConfigSource(() => fetchPlatformConfig(process.env)),
+    config: harnessConfigSource(async () =>
+      fetchPlatformConfig(await platformEnvFor(options.reticleRoot)()),
+    ),
   });
 
   const security = await resolveBridgeSecurityWithAutoToken(options);
   const shared = createSharedServer(security.token === undefined ? {} : { token: security.token });
-  const bridge = new Bridge({ port, server: shared.httpServer, sdkFix: sdkFixForCwd, ...security });
+  const bridge = new Bridge({
+    port,
+    server: shared.httpServer,
+    sdkFix: sdkFixForProject,
+    ...security,
+  });
   // The daemon owns listen (below), so the real bind error is reported there; absorb bridge.ready's
   // mirror rejection so a port collision can't surface as an unhandled promise rejection.
   void bridge.ready.catch(() => undefined);
@@ -533,15 +577,17 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   // answers WHY rather than just "sessionCount: 0".
   // `verifyPort` rides along so a later `serve --http` can tell whether this daemon already honours
   // the requested `--http-port` instead of silently ignoring the flag (#687).
-  shared.attachStatus(() =>
-    statusPayload(
+  shared.attachStatus((held) => {
+    // `init` holds the daemon it is waiting on, so the idle rule cannot shut it down mid-wait.
+    if (held) noteSetupHold(Date.now());
+    return statusPayload(
       bridge.sessions.count(),
       bridge.sessions.list(),
       bridge.sessions.noSessionHint(),
       verifyHttp?.port,
       bridge.sessions.noSessionLead(),
-    ),
-  );
+    );
+  });
   // Agent-independent presence: the daemon outlives any single agent, so when the LAST agent's MCP
   // connection drops (it stopped, or is waiting on the human), end every session and push a clear
   // "go to your terminal" notice to the panel — the human is on the browser and must not lose a typed
@@ -589,6 +635,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     takeAmbientTape: () => recordings.stop(AMBIENT_RECORDING),
     reportStep: reportOnboardingStep,
     flows,
+    author: flowAuthor,
     onRunPersisted: () => syncNudge.run?.(),
   });
   const project = new ProjectStore(fs, reticleRoot, { now });
@@ -628,7 +675,9 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   // console and the panel cannot disagree about a setting they both offer. Nothing is awaited and a
   // failure is not surfaced: the next snapshot re-reads the platform, so a lost write shows up as
   // the switch springing back, which is the truthful outcome.
-  bridge.attachHarnessRequest((enabled) => void writeHarnessSwitch(process.env, enabled));
+  bridge.attachHarnessRequest(
+    (enabled) => void platformEnvFor(reticleRoot)().then((env) => writeHarnessSwitch(env, enabled)),
+  );
   // Scope auto-selection to the active project (from .reticle.json) so a stray tab from another app is
   // never picked when the agent omits a sessionId. Explicit per-call scope/sessionId still overrides.
   // Scope + the no-session diagnosis: "no browser session connected" is the error that ends most
@@ -666,7 +715,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     artifactRootFor: artifactRootResolver(reticleRoot),
     now,
     bridgePort: port,
-    browserProbe: probeChromium,
+    browserProbe: probeLaunchableChromium,
     // A finished verification should not sit behind a one-minute timer — see ToolDeps.onRunPersisted.
     onRunPersisted: (): void => cloudSync.nudge(),
   };
@@ -674,11 +723,15 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   const effectiveDeps = realInput !== undefined ? { ...deps, realInput } : deps;
   // Read per attach, not once: a project that gets wired while this daemon is alive should stop
   // being told to wire itself on the next agent that connects.
-  shared.attachMcp(() =>
+  shared.attachMcp((peerSkew) =>
     createMcpServer(
-      effectiveDeps,
+      peerSkew === undefined
+        ? effectiveDeps
+        : { ...effectiveDeps, peerSkew: connectionSkew(peerSkew) },
       profile,
-      hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
+      // See the sibling call in `start`: a live session outweighs empty/stale durable memory (#1138).
+      bridge.sessions.count() > 0 ||
+        hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
     ),
   );
   // `reticle drive <url>` when this daemon already owns the port: it asks HERE instead of trying to

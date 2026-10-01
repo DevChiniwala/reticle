@@ -926,6 +926,39 @@ describe('a throttled tab timeout is not a missing render', () => {
     expect(result.inconclusive).toBe(THROTTLED_STARVED_NOTE);
   });
 
+  it('a text miss whose string IS on the page, split across children, is not blamed on throttling', async () => {
+    // Next's template on a backgrounded tab: `contains: "To get started, edit the page.tsx file."`
+    // came back "this tab is throttled and has not rendered" while the SAME response said the
+    // string was on the page, split across the heading's children. Finding the text proves the tab
+    // rendered it; the miss is the locator's, and the recovery is the split-text retry.
+    const heading = {
+      ref: asRef('e7'),
+      role: 'heading',
+      name: 'To get started, edit the page.tsx file.',
+      states: [],
+      visible: true,
+    };
+    const session = new ThrottledSession([], () => ({
+      matched: false,
+      count: 0,
+      elements: [],
+      hint: {
+        route: '/',
+        presentTestids: [],
+        presentRegions: [],
+        knownEmptyState: false,
+        splitText: heading,
+      },
+    }));
+    const result = await evaluatePredicate(session, {
+      kind: 'text',
+      contains: 'To get started, edit the page.tsx file.',
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+    expect(result.failureReason).toContain('split across the children');
+  });
+
   it('an unthrottled timeout still looks like a near-miss, not a starved tab', async () => {
     const session = new FakeSession([]);
     const result = await waitForPredicate(
@@ -1462,6 +1495,132 @@ describe('net count is exact, not "at least" — the double-submit must not pass
     expect(r.pass).toBe(false);
     expect(r.decided).toBe(true);
   }, 5_000);
+
+  /**
+   * The decided clause is not always the first to fail. When a non-decided clause precedes the
+   * overshot count in the predicate list, `.find()` picks it first and the conjunction's `decided`
+   * was lost — the polling loop kept retrying a conjunction that can never be true.
+   *
+   * Same invariant as above, but the permanently-false clause is SECOND.
+   */
+  it('decides the whole allOf even when the overshot clause is not first', async () => {
+    const session = new LiveSession();
+    const verdict = waitForPredicate(
+      session,
+      {
+        kind: 'allOf',
+        predicates: [
+          // First: a clause that fails but is NOT decided (could still become true).
+          { kind: 'net', method: 'GET', urlContains: '/a-call-that-never-comes' },
+          // Second: the exact-count clause that has overshot — decided, permanently false.
+          { kind: 'net', method: 'POST', urlContains: '/refund', count: 1 },
+        ],
+      },
+      45_000,
+    );
+    session.push(post(10));
+    session.push(post(69));
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(r.decided).toBe(true);
+  }, 5_000);
+
+  /**
+   * And through a disjunction: when EVERY branch has overshot, no branch can ever become true,
+   * so the whole `anyOf` is decided. Without this the polling loop burns the full budget on an
+   * answer that is provably final — the mirror of the conjunction case above.
+   */
+  it('decides the whole anyOf when every clause has overshot', async () => {
+    const session = new LiveSession();
+    const get = (t: number): ReticleEvent =>
+      ev(
+        EventType.NET_REQUEST,
+        { method: 'GET', url: '/api/v1/payments/pay_1/status', status: 200 },
+        t,
+      );
+    const verdict = waitForPredicate(
+      session,
+      {
+        kind: 'anyOf',
+        predicates: [
+          { kind: 'net', method: 'POST', urlContains: '/refund', count: 1 },
+          { kind: 'net', method: 'GET', urlContains: '/status', count: 1 },
+        ],
+      },
+      45_000,
+    );
+    session.push(post(10));
+    session.push(post(20));
+    session.push(get(30));
+    session.push(get(40));
+    const r = await verdict;
+    expect(r.pass).toBe(false);
+    expect(r.decided).toBe(true);
+  }, 5_000);
+});
+
+/**
+ * "Absent" and "not" are claims about the END of a window, exactly like an exact count, and the wait
+ * used to settle them on the first reading. Measured on the bench's console-clean scenario: a
+ * clean-console check replayed green on a page whose console.error landed a few ms after the first
+ * poll, once the page ran slower. The count hold now covers them too.
+ */
+describe('absence and negation hold like a count — a late error must not pass', () => {
+  class LiveSession implements PredicateSession {
+    readonly #events: ReticleEvent[] = [];
+    readonly #listeners = new Set<(event: ReticleEvent) => void>();
+    elapsed(): number {
+      return 0;
+    }
+    command(): Promise<CommandResult> {
+      return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+    }
+    eventsSince(cursor = 0): ReticleEvent[] {
+      return this.#events.filter((e) => e.t >= cursor);
+    }
+    onEvent(listener: (event: ReticleEvent) => void): () => void {
+      this.#listeners.add(listener);
+      return () => {
+        this.#listeners.delete(listener);
+      };
+    }
+    push(event: ReticleEvent): void {
+      this.#events.push(event);
+      for (const l of this.#listeners) l(event);
+    }
+  }
+
+  it('FAILS a clean-console check when the error lands 59ms after the first reading', async () => {
+    const session = new LiveSession();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'console', level: 'error', absent: true },
+      5000,
+    );
+    setTimeout(() => session.push(ev(EventType.CONSOLE_ERROR, { message: 'late' }, 69)), 59);
+    expect((await verdict).pass).toBe(false);
+  });
+
+  it('FAILS a `not` whose inner claim becomes true 59ms later', async () => {
+    const session = new LiveSession();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'not', predicate: { kind: 'signal', name: 'error:shown' } },
+      5000,
+    );
+    setTimeout(() => session.push(ev(EventType.SIGNAL, { name: 'error:shown' }, 69)), 59);
+    expect((await verdict).pass).toBe(false);
+  });
+
+  it('still passes an honest absence, without burning the timeout', async () => {
+    const session = new LiveSession();
+    const verdict = waitForPredicate(
+      session,
+      { kind: 'console', level: 'error', absent: true },
+      10_000,
+    );
+    expect((await verdict).pass).toBe(true);
+  }, 3_000);
 });
 
 /**
@@ -1890,5 +2049,23 @@ describe('net predicate: ok — asserting on outcome, not a fabricated status', 
   it('still honours an explicit status, so nothing that worked before changes', async () => {
     const session = new FakeSession([ipcFail]);
     expect((await evaluatePredicate(session, { kind: 'net', status: 500 })).pass).toBe(true);
+  });
+});
+
+describe('a confirming hold ends at the caller budget, not in a forced fail', () => {
+  it('passes an honest absence whose budget is shorter than the hold', async () => {
+    const session = {
+      elapsed: () => 0,
+      command: () =>
+        Promise.resolve({ kind: 'command_result' as const, id: 'x', ok: true, result: {} }),
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+    } satisfies PredicateSession;
+    const r = await waitForPredicate(
+      session,
+      { kind: 'console', level: 'error', absent: true },
+      60,
+    );
+    expect(r.pass).toBe(true);
   });
 });

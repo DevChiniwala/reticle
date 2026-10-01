@@ -30,7 +30,7 @@
  * Every dependency is injected — the clock, the fetch, the reads and writes — because this is the
  * one piece of Reticle that talks to a network AND to a disk, and it must be provable without either.
  */
-import { ReticleDir } from '@reticlehq/core';
+import { FlowErrorCode, ReticleDir, SYNC_BATCH_LIMITS } from '@reticlehq/core';
 import { hashPayload } from './sync-hash.js';
 
 /** The server's own doors. Kept beside the code that calls them, like the other cloud paths. */
@@ -48,6 +48,10 @@ const DERIVED_RECORDS = [
   { kind: 'impact', file: ReticleDir.IMPACT_FILE },
   { kind: 'flake', file: ReticleDir.FLAKE_FILE },
   { kind: 'intent', file: ReticleDir.INTENT_FILE },
+  // How each page normally behaves, and how strong each flow's checks are. Kept only here, they
+  // cannot tell a server a page that drifted from one that always behaved that way.
+  { kind: 'envelopes', file: ReticleDir.ENVELOPES_FILE },
+  { kind: 'assertion-tiers', file: ReticleDir.TIERS_FILE },
 ] as const;
 
 type DerivedKind = (typeof DERIVED_RECORDS)[number]['kind'];
@@ -107,12 +111,56 @@ export interface CloudSyncState {
    * fills the gap the server declared and never overrides the server on a question it answered.
    */
   sentRunIds?: string[];
+  /**
+   * The content hash of each run as the server last ACCEPTED it, for the runs still held locally.
+   *
+   * A run is not immutable: a session's live drive run is rewritten after every verdict under the
+   * same id. Sending by id alone delivered its first version and never the rest, so the server held
+   * a tab's first few verdicts and none after. The server upserts a run by id, so a changed run is
+   * simply sent again; this is how the machine tells a changed run from one it already delivered.
+   */
+  sentRunHashes?: Record<string, string>;
+  /**
+   * Runs the server refused, by run id: its reason, and the two things that could change the answer
+   * (a hash of the run file, and of what the platform said it reads). A refused run is not offered
+   * again until one of them changes; re-offering it every cycle got the same refusal and dragged
+   * every flow and capsule along with it.
+   */
+  refusedRuns?: Record<string, RefusedRun>;
+  /**
+   * Hashes of the flow set and the capsule set the platform last answered for. A flow saved or
+   * edited with no new run used to wait for one, because flows only rode along with other data; now
+   * a changed set is sent on its own, and an unchanged one is not sent again.
+   */
+  sentFlowsHash?: string;
+  sentCapsulesHash?: string;
+  /**
+   * A flow or capsule set the platform refused, kept so the refusal stays visible on the cycles that
+   * do not resend it, and so the set is offered again once it changes or the platform reads more.
+   */
+  refusedSets?: Partial<Record<SetPart, RefusedSet>>;
+}
+
+type SetPart = 'flow' | 'capsule';
+
+interface RefusedSet {
+  hash: string;
+  acceptsHash: string;
+  count: number;
+  reason: string;
+}
+
+interface RefusedRun {
+  reason: string;
+  payloadHash: string;
+  acceptsHash: string;
 }
 
 export interface SyncReport {
   /**
-   * False if the cycle failed or any offered run was rejected. A completed HTTP exchange alone
-   * is not a successful push. Accepted counts and rejection reasons still describe partial success.
+   * False if the cycle failed, the server refused anything, or a run or flow was held back for a
+   * version the platform does not read. A completed HTTP exchange alone is not a successful push.
+   * A record KIND the platform does not know yet is reported in `held` and does not fail it.
    */
   ok: boolean;
   /** Runs the server accepted this cycle. */
@@ -122,8 +170,22 @@ export interface SyncReport {
   flowsSent: number;
   /** Capsules the server accepted. Zero when it reported none, which includes not knowing the field. */
   capsulesSent: number;
-  /** Which derived records had actually moved. Empty on a quiet cycle, which is the normal case. */
+  /** Derived records the server ACCEPTED this cycle. Empty on a quiet cycle, the normal case. */
   derivedSent: DerivedKind[];
+  /**
+   * Everything else the server refused: a flow, a capsule, or a derived record. Each reason is a
+   * complete sentence naming the item, because this is often read from a background daemon's log.
+   */
+  refused: Refusal[];
+  /**
+   * What was deliberately NOT sent, and why: a record kind or a file version this platform does
+   * not read. Sending it would only be refused again on every cycle.
+   */
+  held: string[];
+  /** Runs refused on an earlier cycle and not offered again, because nothing has changed since. */
+  notRetried: Array<{ runId: string; reason: string }>;
+  /** Flow or capsule sets refused on an earlier cycle and not offered again. */
+  setsNotRetried: Array<{ part: SetPart; count: number; reason: string }>;
   /** Decisions collected from the dashboard. */
   pulled: number;
   /** True when the pull page was full — call again now rather than waiting for the next tick. */
@@ -139,6 +201,13 @@ export interface SyncReport {
   localIsEmpty?: boolean;
   /** Set when the cycle could not complete. The local record is untouched either way. */
   error?: string;
+}
+
+/** One item the server refused that is not a run. */
+export interface Refusal {
+  /** `flow`, `capsule`, or the derived record's kind. */
+  part: string;
+  reason: string;
 }
 
 interface SyncDeps {
@@ -158,6 +227,8 @@ interface StatusResponse {
   knownRunIds?: string[];
   truncated?: boolean;
   stateHashes?: Record<string, string | null>;
+  /** What this platform reads. Absent on a platform that predates the handshake. */
+  accepts?: unknown;
 }
 
 interface PullResponse {
@@ -182,6 +253,77 @@ const asJson = (text: string): unknown => {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => 'object' === typeof v && null !== v;
 
+/** A list of numbers, or undefined when the server did not send a list at all. */
+const numbersIn = (v: unknown): number[] | undefined =>
+  Array.isArray(v) ? v.filter((n): n is number => 'number' === typeof n) : undefined;
+
+/** A numeric field of an artifact, or undefined when it has none. */
+const numberAt = (v: unknown, field: string): number | undefined => {
+  const n = isRecord(v) ? v[field] : undefined;
+  return 'number' === typeof n ? n : undefined;
+};
+
+/** The name a person knows a flow by, falling back to its position. */
+const flowName = (flow: unknown, index: number): string => {
+  const name = isRecord(flow) ? flow['name'] : undefined;
+  return 'string' === typeof name && name.length > 0 ? name : `flow #${String(index)}`;
+};
+
+const FLOW_VERSION_FIX = 'update the platform or remove `compare` from the flow';
+const RUN_VERSION_FIX = 'update the platform';
+
+/** The server's per-part answer: accepted count and rejection list, each read defensively. */
+function partResult(body: Record<string, unknown>, part: string) {
+  const raw = isRecord(body[part]) ? body[part] : {};
+  const accepted = 'number' === typeof raw['accepted'] ? raw['accepted'] : 0;
+  const rejected = (Array.isArray(raw['rejected']) ? raw['rejected'] : [])
+    .filter(isRecord)
+    .map((r) => ({
+      index: 'number' === typeof r['index'] ? r['index'] : -1,
+      reason: 'string' === typeof r['reason'] ? r['reason'] : 'no reason given',
+      code: r['code'],
+      version: r['version'],
+    }));
+  return { accepted, rejected };
+}
+
+/**
+ * Split runs into requests bounded by count and by serialized size. A run bigger than the byte
+ * bound on its own still goes, alone: it cannot be split, and holding it back would hide it.
+ */
+/** The delivery record, kept only for the runs still on disk — the same bound as `sentRunIds`. */
+function heldHashes(
+  runs: ReadonlyArray<{ runId: string }>,
+  recorded: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { runId } of runs) {
+    const hash = recorded[runId];
+    if (hash !== undefined) out[runId] = hash;
+  }
+  return out;
+}
+
+function batchRuns<T extends { payload: unknown }>(runs: readonly T[]): T[][] {
+  const batches: T[][] = [];
+  let current: T[] = [];
+  let bytes = 0;
+  for (const run of runs) {
+    const size = Buffer.byteLength(JSON.stringify(run.payload));
+    const full =
+      current.length >= SYNC_BATCH_LIMITS.MAX_RUNS || bytes + size > SYNC_BATCH_LIMITS.MAX_BYTES;
+    if (current.length > 0 && full) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(run);
+    bytes += size;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
 /**
  * Run one cycle. Never throws: the local record is already safe on disk, and a sync that can take
  * down the thing it is backing up is worse than no sync.
@@ -194,6 +336,10 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
     flowsSent: 0,
     capsulesSent: 0,
     derivedSent: [],
+    refused: [],
+    held: [],
+    notRetried: [],
+    setsNotRetried: [],
     pulled: 0,
     morePending: false,
   };
@@ -249,62 +395,240 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
     // Same rule for the hashes: only a string can equal a hash we computed, so anything else reads
     // as "unknown" and the record is sent once. Re-sending costs a request; skipping costs the data.
     const hashes = isRecord(held.stateHashes) ? held.stateHashes : {};
+    /*
+     * What this platform reads. `accepts` says so outright; a platform that predates it still lists
+     * every record kind it knows in `stateHashes`, null when it holds nothing. A kind it does not
+     * list is one it does not know, and it will never answer with a hash for it: sending on "hash
+     * differs" then re-sent that record, and every flow and capsule riding with it, on every cycle.
+     */
+    const accepts = isRecord(held.accepts) ? held.accepts : {};
+    const acceptedKinds = new Set(
+      Array.isArray(accepts['derived']) ? onlyStrings(accepts['derived']) : Object.keys(hashes),
+    );
+    const flowVersions = numbersIn(accepts['flowVersions']);
+    const runVersions = numbersIn(accepts['runVersions']);
+    const heldBack: string[] = [];
+    /** Held runs and flows mean the dashboard is missing something; unknown record kinds do not. */
+    let heldArtifacts = false;
 
-    // 2. SEND — only what the server does not already have.
+    // 2. SEND — only what the server does not already have, and only what it can read.
     const allRuns = deps.source.runs();
-    const unsent = allRuns.filter((r) => !known.has(r.runId));
-    const derivedSent: DerivedKind[] = [];
+    const acceptsHash = hashPayload(held.accepts ?? null);
+    const priorRefusals = isRecord(deps.state.refusedRuns) ? deps.state.refusedRuns : {};
+    const refusedRuns: Record<string, RefusedRun> = {};
+    const notRetried: Array<{ runId: string; reason: string }> = [];
+    // Same rule as every record read from disk: only a string can equal a hash we computed.
+    const recorded: Record<string, string> = {};
+    if (isRecord(deps.state.sentRunHashes))
+      for (const [id, hash] of Object.entries(deps.state.sentRunHashes))
+        if ('string' === typeof hash) recorded[id] = hash;
+    /*
+     * Changed means no record, or a record that differs. No record has to count: a machine upgraded
+     * onto this can hold runs the server has only in an older version, and a tab that has closed
+     * never changes again to earn a re-send. So each such run is
+     * sent once and recorded, a one-time cost bounded by what retention keeps.
+     */
+    const delivered = (run: { runId: string; payload: unknown }): boolean =>
+      known.has(run.runId) && recorded[run.runId] === hashPayload(run.payload);
+    const unsent = allRuns.filter((run) => {
+      if (delivered(run)) return false;
+      const prior = priorRefusals[run.runId];
+      const unchanged =
+        prior !== undefined &&
+        'string' === typeof prior.reason &&
+        prior.acceptsHash === acceptsHash &&
+        prior.payloadHash === hashPayload(run.payload);
+      if (!unchanged) return true;
+      refusedRuns[run.runId] = prior;
+      notRetried.push({ runId: run.runId, reason: prior.reason });
+      return false;
+    });
+    const sendable = unsent.filter((run) => {
+      const version = numberAt(run.payload, 'schemaVersion');
+      if (runVersions === undefined || version === undefined || runVersions.includes(version))
+        return true;
+      heldBack.push(
+        `this platform reads run versions ${runVersions.join(', ')}; run ${run.runId} is version ${String(version)} — ${RUN_VERSION_FIX}`,
+      );
+      heldArtifacts = true;
+      return false;
+    });
+    const derivedOffered: DerivedKind[] = [];
+    const unsupported: DerivedKind[] = [];
     const bundle: Record<string, unknown> = {};
-    if (unsent.length > 0) bundle['runs'] = unsent.map((r) => r.payload);
     for (const { kind } of DERIVED_RECORDS) {
       const payload = deps.source.derived(kind);
       if (payload === undefined) continue;
+      if (!acceptedKinds.has(kind)) {
+        unsupported.push(kind);
+        continue;
+      }
       // The one comparison the whole protocol rests on. Same hash, do not send it.
       if (hashPayload(payload) === hashes[kind]) continue;
       bundle[kind] = payload;
-      derivedSent.push(kind);
+      derivedOffered.push(kind);
     }
-    // Flows are small and upserted by name, so they ride along whenever anything else does rather
-    // than earning a round trip of their own.
-    const ridesAlong = bundle['runs'] !== undefined || derivedSent.length > 0;
-    const flows = ridesAlong ? deps.source.flows() : [];
-    if (flows.length > 0) bundle['flows'] = flows;
-    // Same gate as flows: only when something else is already going. A cycle that sent capsules and
-    // nothing else would wake the server on every tick of an idle machine.
-    const capsules = ridesAlong ? deps.source.capsules() : [];
+    if (unsupported.length > 0)
+      heldBack.push(`this platform does not accept ${unsupported.join(', ')} yet`);
+    // Flows and capsules are upserted by name/id, so the whole set goes whenever it differs from the
+    // set the platform last answered for, and rides along with anything else being sent.
+    const flows = deps.source.flows().filter((flow, index) => {
+      const version = numberAt(flow, 'version');
+      if (flowVersions === undefined || version === undefined || flowVersions.includes(version))
+        return true;
+      heldBack.push(
+        `this platform reads flow versions ${flowVersions.join(', ')}; ${flowName(flow, index)} is version ${String(version)} — ${FLOW_VERSION_FIX}`,
+      );
+      heldArtifacts = true;
+      return false;
+    });
+    const capsulesAll = deps.source.capsules();
+    const flowsHash = hashPayload(flows);
+    const capsulesHash = hashPayload(capsulesAll);
+    const priorSets = isRecord(deps.state.refusedSets) ? deps.state.refusedSets : {};
+    const setsNotRetried: Array<{ part: SetPart; count: number; reason: string }> = [];
+    const refusedSets: Partial<Record<SetPart, RefusedSet>> = {};
+    /** A set is due when it changed, or when it was refused and the platform now reads more. */
+    const due = (
+      part: SetPart,
+      hash: string,
+      size: number,
+      sentHash: string | undefined,
+    ): boolean => {
+      if (0 === size) return false;
+      const prior = priorSets[part];
+      if (prior !== undefined && prior.hash === hash) {
+        if (prior.acceptsHash !== acceptsHash) return true;
+        refusedSets[part] = prior;
+        setsNotRetried.push({ part, count: prior.count, reason: prior.reason });
+        return false;
+      }
+      return hash !== sentHash;
+    };
+    const flowsChanged = due('flow', flowsHash, flows.length, deps.state.sentFlowsHash);
+    const capsulesChanged = due(
+      'capsule',
+      capsulesHash,
+      capsulesAll.length,
+      deps.state.sentCapsulesHash,
+    );
+    const ridesAlong =
+      sendable.length > 0 || derivedOffered.length > 0 || flowsChanged || capsulesChanged;
+    if (ridesAlong && flows.length > 0) bundle['flows'] = flows;
+    const capsules = ridesAlong ? capsulesAll : [];
     if (capsules.length > 0) bundle['capsules'] = capsules;
 
     let runsSent = 0;
     let flowsSent = 0;
     let capsulesSent = 0;
-    let runsRejected: Array<{ index: number; reason: string }> = [];
-    if (Object.keys(bundle).length > 0) {
-      const pushed = await call(SYNC_PATH, { method: 'POST', body: JSON.stringify(bundle) });
+    const runsRejected: Array<{ index: number; reason: string }> = [];
+    const refused: Refusal[] = [];
+    const derivedSent: DerivedKind[] = [];
+    let pushError: string | undefined;
+    /*
+     * Runs go up in bounded batches; everything else rides in the first. One request used to carry
+     * the whole backlog, and a backlog over the platform's body limit was refused whole, forever.
+     */
+    const batches = batchRuns(sendable);
+    const requests =
+      Object.keys(bundle).length > 0 || batches.length > 0 ? Math.max(1, batches.length) : 0;
+    let offset = 0;
+    for (let i = 0; i < requests; i += 1) {
+      const batch = batches[i] ?? [];
+      const body: Record<string, unknown> = 0 === i ? { ...bundle } : {};
+      if (batch.length > 0) body['runs'] = batch.map((r) => r.payload);
+      const pushed = await call(SYNC_PATH, { method: 'POST', body: JSON.stringify(body) });
       if (200 !== pushed.status) {
-        const error = `sync ${String(pushed.status)}: ${pushed.text.slice(0, 200)}`;
-        deps.sink.writeState({ ...nextState, lastError: error });
-        return { ...empty, error };
+        pushError = `sync ${String(pushed.status)}: ${pushed.text.slice(0, 200)}`;
+        break;
       }
-      const body = isRecord(pushed.json) ? pushed.json : {};
-      const runs = isRecord(body['runs']) ? body['runs'] : {};
-      const flowsPart = isRecord(body['flows']) ? body['flows'] : {};
-      // Absent means the server said nothing about capsules — an older one that does not know the
-      // field. Read as zero accepted, never as an error: an added field must not break a sync that
-      // was otherwise fine, and the push's own status code is what reports a real refusal.
-      const capsulesPart = isRecord(body['capsules']) ? body['capsules'] : {};
-      runsSent = 'number' === typeof runs['accepted'] ? runs['accepted'] : 0;
-      flowsSent = 'number' === typeof flowsPart['accepted'] ? flowsPart['accepted'] : 0;
-      capsulesSent = 'number' === typeof capsulesPart['accepted'] ? capsulesPart['accepted'] : 0;
-      runsRejected = Array.isArray(runs['rejected'])
-        ? (runs['rejected'] as Array<{ index: number; reason: string }>)
-        : [];
-      nextState.lastPushAt = deps.now();
+      const answer = isRecord(pushed.json) ? pushed.json : {};
+      const runs = partResult(answer, 'runs');
+      runsSent += runs.accepted;
       // Accepted means the server has it. A rejected run was refused by index, so it is exactly as
       // unsent as it was before and must never be remembered as delivered.
-      const refused = new Set(runsRejected.map((r) => r.index));
-      unsent.forEach((run, index) => {
-        if (!refused.has(index)) known.add(run.runId);
+      const refusedHere = new Map(runs.rejected.map((r) => [r.index, r.reason]));
+      batch.forEach((run, index) => {
+        const reason = refusedHere.get(index);
+        if (reason === undefined) {
+          known.add(run.runId);
+          recorded[run.runId] = hashPayload(run.payload);
+        } else
+          refusedRuns[run.runId] = { reason, payloadHash: hashPayload(run.payload), acceptsHash };
       });
+      runsRejected.push(
+        ...runs.rejected.map((r) => ({ index: r.index + offset, reason: r.reason })),
+      );
+      offset += batch.length;
+      if (0 !== i) continue;
+      // Absent means the server said nothing about a part — an older one that does not know the
+      // field. Read as zero accepted, never as an error: an added field must not break a sync.
+      const flowsPart = partResult(answer, 'flows');
+      const capsulesPart = partResult(answer, 'capsules');
+      flowsSent = flowsPart.accepted;
+      capsulesSent = capsulesPart.accepted;
+      for (const r of flowsPart.rejected) {
+        const name = flowName(flows[r.index], r.index);
+        refused.push({
+          part: 'flow',
+          reason:
+            FlowErrorCode.WRONG_VERSION === r.code && 'number' === typeof r.version
+              ? `${name} is version ${String(r.version)} — ${FLOW_VERSION_FIX}`
+              : `flow ${name}: ${r.reason}`,
+        });
+      }
+      for (const r of capsulesPart.rejected)
+        refused.push({ part: 'capsule', reason: `capsule #${String(r.index)}: ${r.reason}` });
+      const firstOf = (part: SetPart): string =>
+        refused.find((r) => r.part === part)?.reason ?? 'no reason given';
+      if (flowsPart.rejected.length > 0)
+        refusedSets.flow = {
+          hash: flowsHash,
+          acceptsHash,
+          count: flowsPart.rejected.length,
+          reason: firstOf('flow'),
+        };
+      if (capsulesPart.rejected.length > 0)
+        refusedSets.capsule = {
+          hash: capsulesHash,
+          acceptsHash,
+          count: capsulesPart.rejected.length,
+          reason: firstOf('capsule'),
+        };
+      // `state` has a key per record sent: "accepted", or the message that refused it.
+      const state = isRecord(answer['state']) ? answer['state'] : {};
+      for (const kind of derivedOffered) {
+        const verdict = state[kind];
+        if ('accepted' === verdict) derivedSent.push(kind);
+        else if ('string' === typeof verdict)
+          refused.push({ part: kind, reason: `${kind}: ${verdict}` });
+      }
+    }
+    if (requests > 0 && pushError === undefined) {
+      nextState.lastPushAt = deps.now();
+      // The platform answered for these sets, refusals included (reported above, and not re-offered
+      // until the set changes — the same rule as a refused run).
+      if (ridesAlong && flows.length > 0) nextState.sentFlowsHash = flowsHash;
+      if (capsules.length > 0) nextState.sentCapsulesHash = capsulesHash;
+    }
+    nextState.refusedRuns = refusedRuns;
+    nextState.refusedSets = refusedSets;
+    if (pushError !== undefined) {
+      nextState.sentRunIds = allRuns.map((r) => r.runId).filter((id) => known.has(id));
+      nextState.sentRunHashes = heldHashes(allRuns, recorded);
+      deps.sink.writeState({ ...nextState, lastError: pushError });
+      return {
+        ...empty,
+        runsSent,
+        runsRejected,
+        flowsSent,
+        capsulesSent,
+        derivedSent,
+        refused,
+        held: heldBack,
+        notRetried,
+        error: pushError,
+      };
     }
 
     /*
@@ -313,6 +637,7 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
      * will never be attempted — so the record follows the artifacts and needs no number of its own.
      */
     nextState.sentRunIds = allRuns.map((r) => r.runId).filter((id) => known.has(id));
+    nextState.sentRunHashes = heldHashes(allRuns, recorded);
 
     // 3. COLLECT — always, even when there was nothing to send.
     const query =
@@ -330,6 +655,9 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
         capsulesSent,
         derivedSent,
         runsRejected,
+        refused,
+        held: heldBack,
+        notRetried,
         error,
       };
     }
@@ -352,17 +680,24 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
     // The cursor is written even on an empty page: it is the server's, and it never goes backwards.
     if ('string' === typeof pulled.cursor) nextState.cursor = pulled.cursor;
     nextState.lastPullAt = deps.now();
-    delete nextState.lastError;
-    deps.sink.writeState(nextState);
 
-    return {
-      // Keep transport errors separate: rejection reasons already identify the failed artifacts.
-      ok: 0 === runsRejected.length,
+    const report: SyncReport = {
+      // Anything refused, or any artifact held back, means the dashboard is missing something.
+      ok:
+        0 === runsRejected.length &&
+        0 === refused.length &&
+        0 === notRetried.length &&
+        0 === setsNotRetried.length &&
+        !heldArtifacts,
       runsSent,
       runsRejected,
       flowsSent,
       capsulesSent,
       derivedSent,
+      refused,
+      held: heldBack,
+      notRetried,
+      setsNotRetried,
       pulled: decisions.length,
       morePending: true === pulled.more,
       /*
@@ -375,6 +710,14 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
         0 === deps.source.flows().length &&
         DERIVED_RECORDS.every(({ kind }) => deps.source.derived(kind) === undefined),
     };
+    /*
+     * A refusal is kept as the last error rather than cleared by a completed exchange: it is what
+     * `reticle whoami` shows, and "the transfer worked" is not "the dashboard has it".
+     */
+    if (report.ok) delete nextState.lastError;
+    else nextState.lastError = problemsOf(report).join('; ');
+    deps.sink.writeState(nextState);
+    return report;
   } catch (error: unknown) {
     // A network that is down is not an error condition for a local-first tool; it is Tuesday.
     const message = describeTransportError(error, deps.config.url);
@@ -423,10 +766,11 @@ export function describeSync(report: SyncReport): string {
    * to send, 3 rejected" — something was very much sent, and the reader is told both that it was
    * not and nothing about why.
    */
+  const rejectedCount = report.runsRejected.length + report.refused.length;
   const push =
     sent.length > 0
       ? `sent ${sent.join(' + ')}`
-      : report.runsRejected.length > 0
+      : rejectedCount > 0
         ? 'nothing accepted'
         : true === report.localIsEmpty
           ? // Not the same statement as "nothing to send", which describes a repo that is simply up
@@ -438,16 +782,34 @@ export function describeSync(report: SyncReport): string {
     0 === report.pulled
       ? ''
       : `, pulled ${String(report.pulled)} decision(s)${report.morePending ? ' (more waiting)' : ''}`;
-  /*
-   * One reason, not a count. A rejection count tells somebody they have a problem and nothing about
-   * which problem — and these arrive from a BACKGROUND daemon, so the summary line is often the only
-   * place anybody ever sees it. Rejections in one cycle almost always share a cause (a version skew
-   * refuses every payload the same way), so the first reason plus the count is the whole story
-   * without printing a line per run; `reticle sync` still lists them all.
-   */
-  const bad =
-    0 === report.runsRejected.length
-      ? ''
-      : `, ${String(report.runsRejected.length)} rejected — ${report.runsRejected[0]?.reason ?? 'no reason given'}`;
-  return `${push}${pull}${bad}`;
+  return `${push}${pull}${problemsOf(report)
+    .map((problem) => `, ${problem}`)
+    .join('')}`;
+}
+
+/**
+ * What went wrong, one phrase per kind of problem.
+ *
+ * One reason, not a count. A rejection count tells somebody they have a problem and nothing about
+ * which problem — and these arrive from a BACKGROUND daemon, so the summary line is often the only
+ * place anybody ever sees it. Rejections in one cycle almost always share a cause (a version skew
+ * refuses every payload the same way), so the first reason plus the count is the whole story
+ * without printing a line per item; `reticle sync` still lists them all.
+ */
+function problemsOf(report: SyncReport): string[] {
+  const problems: string[] = [];
+  const count = report.runsRejected.length + report.refused.length;
+  if (count > 0) {
+    const first = report.runsRejected[0]?.reason ?? report.refused[0]?.reason ?? 'no reason given';
+    problems.push(`${String(count)} rejected — ${first}`);
+  }
+  const firstRefusal = report.notRetried[0];
+  if (firstRefusal !== undefined)
+    problems.push(
+      `refused, not retried: ${String(report.notRetried.length)} run(s) (${firstRefusal.reason})`,
+    );
+  for (const set of report.setsNotRetried)
+    problems.push(`refused, not retried: ${String(set.count)} ${set.part}(s) (${set.reason})`);
+  if (report.held.length > 0) problems.push(`not sent: ${report.held.join('; ')}`);
+  return problems;
 }

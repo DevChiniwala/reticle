@@ -13,8 +13,9 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | Page | What it answers |
 | --- | --- |
 | [quickstart.mdx](quickstart.mdx) | five minutes to a real verdict; every response on it was captured live |
-| [what-is-reticle.mdx](what-is-reticle.mdx) | the definition, what Reticle is NOT, and what it needs to run |
-| [why-reticle.mdx](why-reticle.mdx) | the false-green problem, the measured case, and where we lose |
+| [what-is-reticle.mdx](what-is-reticle.mdx) | the definition, where it fits beside other tools, and what it needs to run |
+| [why-reticle.mdx](why-reticle.mdx) | the false-green problem, the measured case, and what pairs well with it |
+| [use-cases.mdx](use-cases.mdx) | what people verify with it: agent-built changes, security behaviour, accessibility, performance, SEO basics, personas |
 | [install-agentic.mdx](install-agentic.mdx) | what `npx @reticlehq/server init` writes, and how to read its marks |
 | [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [skill-setup.md](skill-setup.md) | the setup half of SKILL.md: what to pass `init`, reading its report, and what to do when it cannot finish |
@@ -24,6 +25,7 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [capabilities.mdx](capabilities.mdx) | coverage, storage, fake clocks, crawl, visual diff, network mocking |
 | [recipes.mdx](recipes.mdx) | worked examples for real situations, with the response each returned |
 | [actions.mdx](actions.mdx) | every action and its arguments, including `press` and its history |
+| [environment.mdx](environment.mdx) | every environment variable Reticle reads, what it changes, and which process reads it |
 | [faq.mdx](faq.mdx) | production, frameworks, comparisons, and the honest limits |
 | [tools/overview.mdx](tools/overview.mdx) | the 18 advertised tools, the 30 in the cold tail, and why |
 | [tools/snapshot.mdx](tools/snapshot.mdx) | `reticle_look { action: "page" }`: three modes, from full tree to a 25-token route check |

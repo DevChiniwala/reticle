@@ -16,9 +16,9 @@ Wired into `package.json` or a package's build, and they happen whether or not y
 | `test-suffixes.mjs` | The one definition of what a test file is. `prepare-dist.mjs`, `orphan-scan.mjs` and `directory-reach.mjs` all read it; they each had their own rule, and the file the three disagreed about shipped to npm. |
 | `alias-dist.mjs` | After `tsc -b`, rewrites `@/…` back to relative paths for this package AND every package it references — `tsc -b` builds the whole reference graph, `tsc-alias` rewrites one of them. |
 | `pack-docs.mjs` | Copies the docs and the skill file into `@reticlehq/server` before it is packed, so they ship with it. |
+| `pack-install-gate.mjs` | Packs every publishable workspace package once for CI's install matrix, then records the commit and each tarball's SHA-256 digest so every cell tests the same verified artifacts. |
 | `stamp-issuer-key.mjs` | Puts the public half of the enterprise licence key into the built server. Runs during that package's build, and the order matters: `prepack` wipes `dist` first, so anything that edits `dist` earlier is erased. |
 | `assemble-changelog.mjs` | Folds the entry files in `.changes/` into the unreleased section of `CHANGELOG.md` at release time. |
-| `remap-stranded-prs.mjs` | Replays a pull request written against the old `packages/*` layout onto the current tree, by rewriting the paths in its patch headers and never a content line. The destinations come from `v3-package-renames.tsv` (git's own rename record), because a package-root prefix lands most of those files on a path that does not exist. `pnpm remap:prs <pr>...` reports what would happen; `--apply` force-pushes. `node scripts/remap-stranded-prs.mjs --self-test` checks the lineage paths from #1033 without touching a pull request. |
 
 ## Checks — they run in CI and fail the build
 

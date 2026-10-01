@@ -26,7 +26,7 @@ import {
   CONTRACT_PARTS,
 } from '@reticlehq/core';
 import { Session } from '@/portal/session/session.js';
-import { SessionManager } from '@/portal/session/session-manager.js';
+import { SessionManager, type RefusedPage } from '@/portal/session/session-manager.js';
 import { tokensMatch } from './token-auth.js';
 import { pairingTokenSource } from './pairing-token.js';
 import { log } from '@/log.js';
@@ -98,6 +98,17 @@ export const WS_CLOSE_REASON = {
     'this dial never got to identify itself. Nothing is wrong with the app; the pool drains on its ' +
     'own and reloading the page reconnects. If it persists, something else on this machine is ' +
     'opening sockets to this port.',
+  /**
+   * A page's HELLO failed the wire schema for a reason other than its protocol number — the SDK and
+   * this daemon are different releases whose contracts no longer agree. The socket is still closed
+   * with the short `invalid message` the SDK already prints; this is the sentence the no-session
+   * diagnosis records, because "never dialled the bridge" was what `init` said about a page this
+   * daemon had just turned away. Same `cause — fix` shape as the protocol-skew reasons.
+   */
+  INVALID_HELLO:
+    "invalid message: the page's hello does not match this daemon's wire contract — put " +
+    '@reticlehq/browser, the build plugin and @reticlehq/server on one release, run `reticle stop`, ' +
+    'then restart the dev server',
 } as const;
 
 /**
@@ -194,10 +205,11 @@ interface BridgeOptions {
    */
   server?: http.Server;
   /**
-   * The SDK-upgrade sentence to attach when a HELLO is skewed. Injected so the daemon can name
-   * this project's packages and package manager; tests that omit it get the no-project fallback.
+   * The SDK-upgrade sentence to attach when a HELLO is skewed, for the project that HELLO named.
+   * Injected so the daemon can name that project's packages and package manager; tests that omit
+   * it get the no-project fallback.
    */
-  sdkFix?: () => string;
+  sdkFix?: (projectId?: string) => string;
 }
 
 /**
@@ -239,6 +251,24 @@ function helloProtocolMismatch(text: string): number | null {
   return null;
 }
 
+/**
+ * What a HELLO says about the page it came from, read loosely enough to survive the schema failing.
+ * Null when the message is not a hello at all — only an SDK sends one, so only then is a refusal
+ * evidence about an app.
+ */
+function peekHelloPage(text: string): RefusedPage | null {
+  try {
+    const json = JSON.parse(text) as { kind?: unknown; url?: unknown; projectId?: unknown };
+    if (json.kind !== MessageKind.HELLO) return null;
+    return {
+      ...('string' === typeof json.url ? { url: json.url } : {}),
+      ...('string' === typeof json.projectId ? { projectId: json.projectId } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Normalize ws RawData (string | Buffer | Buffer[] | ArrayBuffer) into a UTF-8 string. */
 function rawToString(raw: RawData): string {
   if ('string' === typeof raw) return raw;
@@ -274,7 +304,7 @@ export class Bridge {
   readonly #maxSessions: number;
   readonly #maxPendingConnections: number;
   readonly #helloTimeoutMs: number;
-  readonly #sdkFix: () => string;
+  readonly #sdkFix: (projectId?: string) => string;
   #pendingConnections = 0;
   #onReplay: ReplayRequestHandler | undefined;
   /**
@@ -502,9 +532,18 @@ export class Bridge {
             // Told to the AGENT too, not only to the SDK that is about to stop retrying. Without this
             // the next tool call answers "no browser session connected", which reads as "no app is
             // running" — so an SDK too old to connect is invisible.
-            this.sessions.noteClosure(reason, this.#clock());
+            this.sessions.noteClosure(reason, this.#clock(), peekHelloPage(text) ?? {});
             socket.close(WS_CLOSE.PROTOCOL_MISMATCH[0], reason);
             return;
+          }
+          // Recorded only for a HELLO on a socket that has none yet: that is a page being turned
+          // away, and it used to leave no trace, so `init` reported "never dialled the bridge" about
+          // a page this daemon had just refused. A malformed frame on a live session is a different
+          // failure and says nothing about whether the app can connect.
+          const refused = undefined === session ? peekHelloPage(text) : null;
+          if (null !== refused) {
+            log('hello_invalid', { ...refused });
+            this.sessions.noteClosure(WS_CLOSE_REASON.INVALID_HELLO, this.#clock(), refused);
           }
           socket.close(...WS_CLOSE.INVALID_MESSAGE);
           return;
@@ -565,7 +604,10 @@ export class Bridge {
               presented: parsed.token !== undefined && 0 < parsed.token.length,
               tokenSource: this.#tokenSource,
             });
-            this.sessions.noteClosure(reason, this.#clock());
+            this.sessions.noteClosure(reason, this.#clock(), {
+              url: parsed.url,
+              ...(parsed.projectId === undefined ? {} : { projectId: parsed.projectId }),
+            });
             socket.close(WS_CLOSE.AUTH_FAILED[0], reason);
             return;
           }
@@ -632,6 +674,9 @@ export class Bridge {
           // The daemon is the single judge of skew, and HELLO is where the page announces itself.
           // Reported on the session (reticle_sessions) AND queued for the next tool result, because an
           // agent driving a flow never calls reticle_sessions and would never learn.
+          // Read only if the page IS skewed: the fix reads the project's package.json and lockfile,
+          // and a compatible page (nearly every HELLO) should not pay for that on connect.
+          const fixForThisProject = (): string => this.#sdkFix(parsed.projectId);
           const skew = describeSkew(
             {
               what: 'the page',
@@ -643,7 +688,9 @@ export class Bridge {
               ...(parsed.contractParts === undefined
                 ? {}
                 : { contractParts: parsed.contractParts }),
-              fix: this.#sdkFix(),
+              get fix(): string {
+                return fixForThisProject();
+              },
             },
             {
               version: SERVER_VERSION,

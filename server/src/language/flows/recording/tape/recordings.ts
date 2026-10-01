@@ -1,4 +1,4 @@
-import { FlowStepTool, type Predicate } from '@reticlehq/core';
+import { FlowStepTool, PredicateKind, type FlowFile, type Predicate } from '@reticlehq/core';
 
 /** One captured agent action, normalized for replay. */
 export interface RecordedStep {
@@ -28,6 +28,12 @@ export interface RecordedStep {
    * `invoke` first and treats the step as a call.
    */
   invoke?: string;
+  /** The page this step ran on. Written to the saved step (unlike `route`, which cuts journeys). */
+  page?: string;
+  /** The page it ended on once it settled — see `markEnded`. */
+  endPage?: string;
+  /** Why the agent took this step: the `intent` it declared on the action. Names the saved flow. */
+  intent?: string;
 }
 
 interface ActiveRecording {
@@ -72,6 +78,8 @@ export interface CompiledProgram {
    * format change.
    */
   routes?: string[];
+  /** Who made it — see FlowFile.author. Stamped by the caller that knows. */
+  author?: FlowFile['author'];
 }
 
 /**
@@ -109,6 +117,8 @@ const AMBIENT_STEP_CAP = 400;
 export class RecordingStore {
   readonly #active = new Map<string, ActiveRecording>();
   readonly #compiled = new Map<string, CompiledProgram>();
+  /** A navigation came after the last captured step — see markNavigated. */
+  #navigatedSinceStep = false;
 
   start(name: string, cursor: number, startPath?: string): void {
     const openedOver = new Map<string, number>();
@@ -148,6 +158,7 @@ export class RecordingStore {
    * anything should not carry an empty tape, and "did anything happen at all" stays answerable.
    */
   capture(step: RecordedStep, route?: string): void {
+    this.#navigatedSinceStep = false;
     if (!this.#active.has(AMBIENT_RECORDING)) {
       this.#active.set(AMBIENT_RECORDING, {
         cursor: 0,
@@ -163,10 +174,60 @@ export class RecordingStore {
       // it is a different one that starts in a state nothing established. A recording somebody
       // opened on purpose is not capped — they said when it starts and they say when it stops.
       if (AMBIENT_RECORDING === name && rec.steps.length >= AMBIENT_STEP_CAP) continue;
+      // A step nobody marked ended where the next one began.
+      const previous = rec.steps.at(-1);
+      if (previous !== undefined && previous.endPage === undefined && step.page !== undefined) {
+        previous.endPage = step.page;
+      }
       // The route rides on the AMBIENT tape only: a recording somebody opened deliberately is
       // already one journey by construction, and stamping a route on its steps would change what a
       // deliberate recording contains.
       rec.steps.push(AMBIENT_RECORDING === name && route !== undefined ? { ...step, route } : step);
+    }
+  }
+
+  /**
+   * Add a consequence to the last captured step of every active recording.
+   *
+   * A separate `reticle_assert` after an act is how an agent proves what the act did, and it never
+   * reached the recorder — only the act tools called `capture` — so the flow kept the click and lost
+   * the proof. What the step already declared is kept; the new check joins it under `allOf`.
+   */
+  attachExpect(expect: Predicate): void {
+    if (this.#navigatedSinceStep) return;
+    for (const rec of this.#active.values()) {
+      const last = rec.steps.at(-1);
+      if (last === undefined) continue;
+      const held = last.expect;
+      last.expect =
+        held === undefined
+          ? expect
+          : PredicateKind.ALL_OF === held.kind
+            ? { ...held, predicates: [...held.predicates, expect] }
+            : { kind: PredicateKind.ALL_OF, predicates: [held, expect] };
+    }
+  }
+
+  /**
+   * A navigation happened. Navigating records no step, so until the next one is captured, a check
+   * proved now is about the page the navigation opened, not about the last step — and kept on that
+   * step, replay would ask it right after the click, of a page it was never true on.
+   */
+  markNavigated(): void {
+    this.#navigatedSinceStep = true;
+  }
+
+  /**
+   * The page the step just captured ended on, once its action settled.
+   *
+   * Fills only a step that has none, so calling it after an action that captured nothing leaves the
+   * previous step's own answer alone.
+   */
+  markEnded(page: string | undefined): void {
+    if (page === undefined) return;
+    for (const rec of this.#active.values()) {
+      const last = rec.steps.at(-1);
+      if (last !== undefined && last.endPage === undefined) last.endPage = page;
     }
   }
 

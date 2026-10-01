@@ -78,6 +78,8 @@ export const INTENT_TOOLS: ToolDef[] = [
               .optional(),
           }),
         )
+        // Non-empty in the schema too, so the advertised contract says what `declare` enforces.
+        .min(1)
         .optional()
         .describe('declare only. Batchable — declare every intent for a feature in one call.'),
       id: z.string().optional().describe('bind only: which intent the predicate proves.'),
@@ -166,9 +168,14 @@ export const INTENT_TOOLS: ToolDef[] = [
         return { intents: await store.open() };
       }
       const raw = args['intents'];
-      const entries = Array.isArray(raw)
-        ? (raw as { id: string; statement: string; surface?: never }[])
-        : [];
+      // Refused, not read as an empty list: `declare` with nothing to declare stored nothing and
+      // answered `{ intents: [] }`, which an agent reads as a declaration that worked (#1118).
+      if (!Array.isArray(raw) || 0 === raw.length) {
+        throw new Error(
+          `${ReticleTool.INTENT} declare: \`intents\` must be a non-empty array of { id, statement }, got ${raw === undefined ? 'nothing' : JSON.stringify(raw)} — nothing was stored`,
+        );
+      }
+      const entries = raw as { id: string; statement: string; surface?: never }[];
       const declared = await store.declare(entries);
       // Said, not swallowed: an agent that declared something and finds nothing stored would
       // otherwise conclude the ledger lost it.

@@ -72,6 +72,21 @@ const REGRESSIONS = {
       replaceOnce(F.store, '    set({ newDeployOpen });', '    set({ newDeployOpen: false });');
     },
   },
+  'deploy-never-ships': {
+    files: [F.store],
+    apply() {
+      // The END of the create-deployment journey breaks, and nothing before it does: the dialog
+      // closes, the row appears, deploy:created fires, and a beat later the "is live" toast and
+      // deploy:shipped still fire too. Only the record never goes live — the go-live update matches
+      // the NEXT id, not this one. A check that stops at the first consequence, or trusts the app's
+      // own announcement, passes on this build. Comment-free, so source-reading gets no label.
+      replaceOnce(
+        F.store,
+        "    setTimeout(() => {\n      set({\n        deployments: get().deployments.map((d) => (d.id === id ? { ...d, status: 'live' } : d)),",
+        "    setTimeout(() => {\n      set({\n        deployments: get().deployments.map((d) => (d.id === depSeq ? { ...d, status: 'live' } : d)),",
+      );
+    },
+  },
   'broken-form-validation': {
     files: [F.modal],
     apply() {
@@ -126,30 +141,10 @@ const REGRESSIONS = {
   },
 };
 
-// The unique marker string each regression injects. A bug is FIXED iff its marker is gone from its
-// files — sound for any fix (revert or rewrite), since removing the buggy code is necessary to fix it.
-// Used by the fix-loop ablation's deterministic re-check (bench/fix-loop).
-export const INJECTION_SIGNATURES = {
-  'silent-dom-regression': ['kpis.slice(0, -1)'],
-  'signal-contract-violation': ['emit(Sig.FILTER_CHANGED, { view })'],
-  'route-transition-break': ["view === 'compose' ? get().view : view"],
-  'missing-modal': ['set({ newDeployOpen: false })'],
-  'broken-form-validation': ['if (-1 === service.length) return;', 'disabled={false}'],
-  'cross-component-regression': ['set({ filter: get().filter })'],
-  'layout-shift': ["gridTemplateColumns: '1fr 1fr 1fr'"],
-  'network-timeout': ['fault-timeout'],
-};
-
 export function listRegressions() {
   return Object.keys(REGRESSIONS);
 }
 
-/** The marker strings for a regression (empty if none registered — that bug isn't fix-loop-checkable). */
-export function signaturesOf(id) {
-  return INJECTION_SIGNATURES[id] ?? [];
-}
-
-/** The source files a regression touches. */
 /** Every tracked file this module rewrites — the blast radius of a `git checkout --`. */
 const ANCHOR_FILES = [...new Set(Object.values(REGRESSIONS).flatMap((r) => r.files))];
 
@@ -197,12 +192,6 @@ export function assertAnchorsClean() {
       `\n\nCommit or stash them first. If a previous run crashed and left a regression injected, ` +
       `run \`node bench/harness/inject.mjs --revert-all\` to clear it.`,
   );
-}
-
-export function filesOf(id) {
-  const r = REGRESSIONS[id];
-  if (!r) throw new Error(`unknown regression ${id}`);
-  return r.files;
 }
 
 export function inject(id) {

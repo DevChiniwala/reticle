@@ -32,7 +32,7 @@
   "navigation": {
     "versions": [
       {
-        "version": "3.3.0",
+        "version": "3.4.0",
         "default": true,
         "tabs": [
           {
@@ -44,6 +44,7 @@
                   "quickstart",
                   "what-is-reticle",
                   "why-reticle",
+                  "use-cases",
                   "getting-started",
                   "for-agents"
                 ]
@@ -139,7 +140,8 @@
                   "cli/feedback",
                   "cli/identify",
                   "cli/help",
-                  "cli/cloud"
+                  "cli/cloud",
+                  "environment"
                 ]
               },
               {
@@ -427,6 +429,16 @@
     {
       "source": "/tools-wait-for",
       "destination": "/tools/wait-for",
+      "permanent": true
+    },
+    {
+      "source": "/tools/predicates",
+      "destination": "/predicates",
+      "permanent": true
+    },
+    {
+      "source": "/tools/predicates.md",
+      "destination": "/predicates.md",
       "permanent": true
     }
   ],

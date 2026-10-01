@@ -1,6 +1,13 @@
-import { PredicateKind, REPLAY_PROGRAM_VERSION, asFlowName } from '@reticlehq/core';
+import {
+  ActionType,
+  PredicateKind,
+  QueryBy,
+  REPLAY_PROGRAM_VERSION,
+  asFlowName,
+  defaultIsSensitiveKey,
+} from '@reticlehq/core';
 import { clauseOfKind } from '@reticlehq/core';
-import type { FlowName, Predicate } from '@reticlehq/core';
+import type { FlowFile, FlowName, Predicate } from '@reticlehq/core';
 
 /**
  * What this module needs a recorded step to BE, named structurally rather than imported.
@@ -18,6 +25,10 @@ export interface TapeStep {
   expect?: Predicate;
   /** Recorder-internal, and the field journeys are cut on. Never written to the saved flow. */
   route?: string;
+  page?: string;
+  endPage?: string;
+  /** The intent the agent declared on this action. The first one names the journey. */
+  intent?: string;
 }
 
 /** The compiled shape a flow store accepts. Structural, for the same reason as `TapeStep`. */
@@ -26,6 +37,7 @@ export interface DriveProgram {
   version: number;
   steps: TapeStep[];
   startPath?: string;
+  author?: FlowFile['author'];
 }
 
 /**
@@ -62,7 +74,7 @@ const segment = (value: string, max: number): string =>
  * DOM-shaped claims are the weakest. Naming a flow after the strongest thing it proves is the same
  * judgement the honesty grade makes, reused where a human reads it.
  *
- * Returns '' when a step claims nothing nameable, and the caller keeps the old session-only name.
+ * Returns '' when a step claims nothing nameable.
  */
 function provedSlug(steps: readonly TapeStep[]): string {
   for (const step of steps) {
@@ -90,46 +102,30 @@ function provedSlug(steps: readonly TapeStep[]): string {
   return '';
 }
 
+/** Every auto-saved flow's name starts here, which is what lets a merge tell them from hand-named ones. */
+export const DRIVE_FLOW_PREFIX = 'drive-';
+
 /**
- * A stable name for what this session drove — led by what it proved.
+ * A readable name for a journey, led by WHY it was driven.
  *
- * Two properties, and the name used to have only the second. It has to be STABLE: teardown fires on
- * every socket close and a reconnecting tab keeps its id, so a name that moves leaves one journey
- * scattered across several files, each a partial copy of the others. And it has to be READABLE,
- * because `presenter-controls.ts` renders it straight into the replay button's `textContent` — so
- * the label a person actually sees was `drive-sdc991872-6d66-4adf-8780-f931c62905f9`, twice, for two
- * different journeys. A session id is a fact about the socket, not about the feature.
+ * The agent's own `intent` on the action is the best name there is — it is the sentence a person
+ * would use — so it leads when one was declared. Without one, what the journey proved names it (the
+ * strongest claim first), and the route follows so two journeys stay apart.
  *
- * So the claim leads, the route follows, and a SHORT session discriminator trails: two sessions that
- * prove the same thing on the same route stay separate files rather than overwriting each other,
- * which is the one thing the full id was buying that the claim cannot.
+ * No session id. It used to trail every name so two sessions never overwrote each other, which also
+ * made every session's drive of the same journey its own file. Two DIFFERENT journeys that land on
+ * one name are now told apart at save by their shape, and two copies of the SAME journey merge —
+ * see FlowStore.saveJourney.
  */
-export function driveFlowName(
-  sessionId: string,
-  route?: string,
-  steps: readonly TapeStep[] = [],
-): FlowName {
-  const safe = sessionId.replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 40);
-  const proved = provedSlug(steps);
-  // The route is part of the name, so two journeys in one session do not overwrite each other —
-  // and so a re-drive of the same journey rewrites its own flow rather than adding a near-duplicate.
-  const leg = (route ?? '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 24);
-  // Minted here, not at the call site. This function is where a drive's flow name comes into
-  // existence, and every character it can emit has just been forced through the safe-segment
-  // replacements above — so this IS the validated boundary the brand is meant to be created at.
-  // Returning `string` pushed a cast onto each caller, which is the hole `flowPath`'s parameter
-  // type was added to close.
-  // Nothing nameable was proved, so keep the name this function has always produced.
-  if ('' === proved) {
-    return asFlowName(0 === leg.length ? `drive-${safe}` : `drive-${safe}-${leg}`);
-  }
-  // Enough of the session to keep two of them apart, and little enough to read past.
-  const discriminator = safe.replace(/-/g, '').slice(0, 8);
-  const parts = ['drive', proved, ...(0 === leg.length ? [] : [leg]), discriminator];
-  return asFlowName(parts.join('-'));
+export function driveFlowName(route?: string, steps: readonly TapeStep[] = []): FlowName {
+  const intent = steps.find((step) => step.intent !== undefined)?.intent;
+  const leg = segment(route ?? '', 24);
+  const why = intent === undefined ? '' : segment(intent, 48);
+  const lead = '' !== why ? why : provedSlug(steps);
+  // Minted here: every character has just been forced through `segment`, so this IS the validated
+  // boundary the brand is meant to be created at.
+  const parts = [lead, ...('' !== why || 0 === leg.length ? [] : [leg])].filter((p) => '' !== p);
+  return asFlowName(`${DRIVE_FLOW_PREFIX}${0 === parts.length ? 'journey' : parts.join('-')}`);
 }
 
 export interface DriveFlowOutcome {
@@ -171,20 +167,41 @@ export interface DriveFlowOutcome {
  */
 function segmentsByRoute(steps: readonly TapeStep[]): { route?: string; steps: TapeStep[] }[] {
   const out: { route?: string; steps: TapeStep[] }[] = [];
+  let signedIn = false;
   for (const step of steps) {
     const last = out.at(-1);
-    if (last !== undefined && last.route === step.route) {
+    const previous = last?.steps.at(-1);
+    // The same journey when the route is unchanged, or when the previous ACTION moved the app here
+    // — cart → shipping → payment is one flow, and cutting it left three fragments that each
+    // proved a page and none proved the journey. Not after a sign-in: that is the cut this exists
+    // for, and a login that navigates onward must still not open the next flow.
+    const caused =
+      previous !== undefined && step.route !== undefined && previous.endPage === step.route;
+    if (last !== undefined && (last.route === step.route || (caused && !signedIn))) {
       last.steps.push(step);
+      signedIn ||= typesASecret(step);
       continue;
     }
+    signedIn = typesASecret(step);
     out.push({ ...(step.route === undefined ? {} : { route: step.route }), steps: [step] });
   }
   return out;
 }
 
+/**
+ * A fill into a field the network channel would redact — the sign-in a journey must not carry.
+ * Read off the recorder's anchor args: a testid names the field by `value`, a role by `name`.
+ */
+function typesASecret(step: TapeStep): boolean {
+  const action = step.args['action'];
+  if (ActionType.FILL !== action && ActionType.TYPE !== action) return false;
+  const by = step.args['by'];
+  const field = QueryBy.TESTID === by ? step.args['value'] : step.args['name'];
+  return 'string' === typeof field && defaultIsSensitiveKey(field);
+}
+
 /** A flow per journey, so two journeys in one session are two regression tests rather than one. */
 export function driveFlowsFrom(
-  sessionId: string,
   tape: { steps: readonly TapeStep[]; startPath?: string } | undefined,
 ): { programs: DriveProgram[]; outcome: DriveFlowOutcome } {
   if (tape === undefined || 0 === tape.steps.length) return { programs: [], outcome: {} };
@@ -197,7 +214,7 @@ export function driveFlowsFrom(
     }
     const startPath = segment.route ?? tape.startPath;
     programs.push({
-      name: driveFlowName(sessionId, startPath, segment.steps),
+      name: driveFlowName(startPath, segment.steps),
       version: REPLAY_PROGRAM_VERSION,
       // The route is recorder-internal and has no business on disk — `startPath` is where the
       // on-disk flow says the same thing, in the field replay actually reads.

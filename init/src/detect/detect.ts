@@ -21,6 +21,13 @@ export const Framework = {
    */
   ELECTRON_VITE: 'electron-vite',
   /**
+   * Electron Forge's Vite template. Its Vite config is split three ways (`vite.main.config.*`,
+   * `vite.preload.config.*`, `vite.renderer.config.*`) and there is no `vite.config.*` at all, so it
+   * used to read as plain Vite with a missing config: a manual step, no preload shim, no capture
+   * helper, and a re-run that could never clear the ⚠. Only the renderer config has a document.
+   */
+  ELECTRON_FORGE: 'electron-forge',
+  /**
    * React Router in FRAMEWORK mode (v7's `@react-router/dev`, the successor to Remix).
    *
    * Vite-based, and it renders HTML through its own request handler — so the Vite plugin's
@@ -38,6 +45,16 @@ export const Framework = {
    */
   REACT_ROUTER: 'react-router',
   /**
+   * Remix v2 (`@remix-run/dev`) — React Router framework mode under its previous name.
+   *
+   * On Vite (`vitePlugin` from `@remix-run/dev`) it renders its own HTML exactly as framework mode
+   * does, so it needs the same client-entry connect. It used to fall through to `Framework.VITE`:
+   * the plugin was wired, every step went green, and the page never connected, because nothing
+   * reaches a document Remix SSRs. On the classic compiler (no Vite) there is no plugin to serve the
+   * connect module at all, and the plan says so rather than wiring half of it.
+   */
+  REMIX: 'remix',
+  /**
    * TanStack Start SSRs `<html>` from `src/routes/__root.tsx` and never sends Vite's index.html, so
    * the plugin's `transformIndexHtml` injection never fires. It used to fall through to
    * `Framework.VITE`, where `init` wired the plugin, reported every step green ("also injects
@@ -52,6 +69,12 @@ export const Framework = {
   TANSTACK_START: 'tanstack-start',
   SVELTEKIT: 'sveltekit',
   ASTRO: 'astro',
+  /**
+   * Angular CLI. It has no Vite config to patch (the CLI owns its bundler) and no index.html at the
+   * root, so it used to fall through to HTML — and be handed the React kit, a ⚠ pointing at a file
+   * that does not exist, and two snippets that fail on it.
+   */
+  ANGULAR: 'angular',
   /** Create React App. No config file exists, so `react-scripts` in the dependencies is the signal. */
   CRA: 'cra',
   HTML: 'html',
@@ -150,6 +173,14 @@ export interface Detection {
   webGlSubtree?: boolean | undefined;
   packageManager: PackageManager;
   /**
+   * The prefix this run can actually invoke `packageManager` through — see `preflight.ts` (#1149) for
+   * why that can be `corepack <packageManager>` rather than the bare name. Undefined here: `detect` is
+   * pure and never probes a binary, so this is filled in by `run.ts` from `preflight`'s result, before
+   * the plan is built. Every later spawn or printed command for the package manager reads this rather
+   * than `packageManager` alone.
+   */
+  packageManagerCommand?: string;
+  /**
    * Every dependency this package DECLARES, by name, merged across the three blocks.
    *
    * So the planner can tell "not wired yet" from "wired already". Without it the install step could
@@ -177,6 +208,17 @@ const REACT_ROUTER_CONFIGS = [
   'react-router.config.mjs',
 ];
 const NUXT_CONFIGS = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs'];
+/** The classic Remix compiler's config. Remix on Vite has none; its dependency is the signal. */
+const REMIX_CONFIGS = ['remix.config.js', 'remix.config.mjs', 'remix.config.cjs'];
+/** Forge's renderer build — the only one of its three Vite configs with a document. */
+export const FORGE_RENDERER_CONFIGS = [
+  'vite.renderer.config.ts',
+  'vite.renderer.config.mts',
+  'vite.renderer.config.js',
+  'vite.renderer.config.mjs',
+];
+/** The Angular CLI workspace file. */
+export const ANGULAR_WORKSPACE_FILE = 'angular.json';
 const ASTRO_CONFIGS = [
   'astro.config.mjs',
   'astro.config.js',
@@ -264,6 +306,17 @@ export const FRAMEWORK_SIGNALS: Record<Framework, FrameworkSignals> = {
    */
   [Framework.ELECTRON_VITE]: { deps: ['electron-vite'], configs: ELECTRON_VITE_CONFIGS },
   /**
+   * The Vite plugin, not `@electron-forge/cli`: a Forge app on the webpack template has no Vite
+   * config to patch, and claiming it here would hand it steps that cannot apply.
+   */
+  [Framework.ELECTRON_FORGE]: {
+    deps: ['@electron-forge/plugin-vite'],
+    configs: FORGE_RENDERER_CONFIGS,
+  },
+  /** `@remix-run/dev` is both compilers' package; the plan tells them apart by the Vite config. */
+  [Framework.REMIX]: { deps: ['@remix-run/dev'], configs: REMIX_CONFIGS },
+  [Framework.ANGULAR]: { deps: ['@angular/core'], configs: [ANGULAR_WORKSPACE_FILE] },
+  /**
    * The Start packages, never Query or Router alone — those stay on the Vite path. Start has no
    * config file of its own to key on.
    */
@@ -293,9 +346,17 @@ export const DETECTION_ORDER: readonly Framework[] = [
   Framework.SVELTEKIT,
   Framework.ASTRO,
   Framework.ELECTRON_VITE,
+  // Before Vite, for the reason electron-vite is: Forge's template depends on `vite` directly.
+  Framework.ELECTRON_FORGE,
   Framework.REACT_ROUTER,
+  // After React Router, so an app half-way through the Remix -> React Router upgrade gets the
+  // successor's wiring; before Vite, because Remix on Vite depends on `vite` directly.
+  Framework.REMIX,
   Framework.TANSTACK_START,
   Framework.VITE,
+  // After Vite: an Analog app is Angular on Vite, and the Vite plugin's index.html injection reaches
+  // it. A CLI app never depends on `vite` itself — the CLI bundles its own.
+  Framework.ANGULAR,
   Framework.CRA,
 ];
 
@@ -492,11 +553,27 @@ export function installCommandParts(
    * `--legacy-peer-deps` on a manager that does not recognise the flag.
    */
   extraFlags: readonly string[] = [],
+  /**
+   * The prefix that actually invokes `pm` on this machine — `pm` itself, or `corepack ${pm}` on a
+   * corepack-only machine (see `Detection.packageManagerCommand`). Defaults to `pm` so every existing
+   * caller keeps spawning the bare binary without naming this.
+   */
+  prefix: string = pm,
 ): InstallCommand {
   const list = 'string' === typeof pkgs ? [pkgs] : pkgs;
+  // A bare `pm` is one word and stays the whole command; `corepack ${pm}` splits so `corepack` is the
+  // program `spawnAllowed` runs and `pm` is its first argument — the shape `RUNNABLE_COMMANDS` and the
+  // corepack probe both expect.
+  const [command, ...leadingArgs] = prefix.split(' ');
   return {
-    command: pm,
-    args: [...INSTALL_ARGS[pm], ...list, ...(QUIET_INSTALL_ARGS[pm] ?? []), ...extraFlags],
+    command: command ?? pm,
+    args: [
+      ...leadingArgs,
+      ...INSTALL_ARGS[pm],
+      ...list,
+      ...(QUIET_INSTALL_ARGS[pm] ?? []),
+      ...extraFlags,
+    ],
   };
 }
 
@@ -508,7 +585,12 @@ export function installCommandParts(
  * directly for that reason; routing it through the parts would put `--no-audit --no-fund` in front of
  * every reader and teach them our noise-suppression as if it were part of installing Reticle.
  */
-export function installCommand(pm: PackageManager, pkgs: string | readonly string[]): string {
+export function installCommand(
+  pm: PackageManager,
+  pkgs: string | readonly string[],
+  /** As in `installCommandParts` — what a corepack-only machine has to type instead of bare `pm`. */
+  prefix: string = pm,
+): string {
   const list = 'string' === typeof pkgs ? [pkgs] : pkgs;
-  return `${pm} ${[...INSTALL_ARGS[pm], ...list].join(' ')}`;
+  return `${prefix} ${[...INSTALL_ARGS[pm], ...list].join(' ')}`;
 }

@@ -34,8 +34,12 @@ export function daemonPollDelayMs(attempt: number): number {
  * Returns true if something is already listening on the reticle port.
  * Uses a plain TCP probe so we don't create a side-effectful SSE session
  * inside the daemon just to check reachability.
+ *
+ * `host` defaults to loopback, which is every caller's actual target — except `bootSession`
+ * (reticlehq/reticle#1165 review), whose Bridge can bind a non-default host via `RETICLE_HOST`.
+ * Hardcoding loopback here made that preflight check the wrong address.
  */
-export function probeDaemon(port: number): Promise<boolean> {
+export function probeDaemon(port: number, host: string = LOOPBACK_HOST): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     socket.setTimeout(500);
@@ -48,7 +52,7 @@ export function probeDaemon(port: number): Promise<boolean> {
       socket.destroy();
       resolve(false);
     });
-    socket.connect(port, LOOPBACK_HOST);
+    socket.connect(port, host);
   });
 }
 
@@ -86,4 +90,25 @@ export async function waitForDaemon(
     `reticle daemon did not become ready on port ${String(port)} within ` +
       `${String(DAEMON_READY_TIMEOUT_MS)}ms — ${describePresence(presence, port)}`,
   );
+}
+
+/** How long a spawned daemon gets to bind before `serve`, `restart` or `init` gives up on it. */
+const BIND_TIMEOUT_MS = 15_000;
+const BIND_POLL_MS = 150;
+
+/**
+ * Poll until `/status` on `port` answers as a Reticle daemon; false once the bound passes.
+ *
+ * One rule for the three commands that start a daemon. `init` used to borrow `waitForDaemon`'s
+ * shorter reconnect budget, and on a cold fresh HOME it printed "could not start the Reticle
+ * daemon" over a daemon that bound seconds later. Bounded polling, never a fixed sleep.
+ */
+export async function waitForDaemonBind(port: number): Promise<boolean> {
+  const deadline = Date.now() + BIND_TIMEOUT_MS;
+  for (;;) {
+    const presence = await probePresence(port, { tcpOpen: probeDaemon, status: fetchStatus });
+    if (presence === PortPresence.DAEMON) return true;
+    if (Date.now() >= deadline) return false;
+    await delay(BIND_POLL_MS);
+  }
 }

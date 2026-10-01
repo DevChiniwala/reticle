@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FEEDBACK_HINT } from './diagnose/closing-hint.js';
 import { SILENT_HOST } from './host.js';
 import { runInit, resolveLockfiles, type InitIo, type InitOptions } from './run.js';
@@ -45,6 +45,9 @@ function memoryIo(
   // Simulate the Cursor config dir existing when requested.
   const present = { ...files };
   if (cursor) present[`${HOME}/.cursor`] = '';
+  // A registered Claude Code is an entry in its state file, which init reads rather than asking
+  // `claude mcp get` (that launches the server — see claudeHasReticle).
+  if (mcpExists) present[`${HOME}/.claude.json`] = JSON.stringify({ mcpServers: { reticle: {} } });
   // Absolute paths (home-dir config) bypass the scoping prefix, matching the real IO.
   /**
    * Normalise separators before keying.
@@ -122,7 +125,7 @@ function memoryIo(
       execCalls.push({ command, args });
       return 'function' === typeof execOk ? execOk(command, args) : execOk;
     },
-    probe: (_command, args) => (args.includes('get') ? mcpExists : claudeAvailable),
+    probe: () => claudeAvailable,
     print: (l) => lines.push(l),
     host: { ...SILENT_HOST, pairingToken: () => HOST_TOKEN },
   };
@@ -229,6 +232,31 @@ describe('runInit', () => {
     expect(out).toMatch(/import \{ reticle \} from 'https:\/\//);
     expect(out).toContain('reticle.connect(');
     expect(out).not.toMatch(/from '@reticlehq\/\w+'/);
+  });
+
+  it('moves the port in an existing non-JS .reticle.json when --port changes', () => {
+    // The daemon starts on the requested port; a config still naming the old one sends the agent to
+    // a daemon that is no longer there.
+    const io = memoryIo({
+      'requirements.txt': 'fastapi\n',
+      '.reticle.json': JSON.stringify({ framework: 'html', projectId: 'p', port: 4688 }),
+    });
+    runInit({ ...OPTS, port: 4689 }, io);
+    expect(JSON.parse(io.written['.reticle.json'] ?? '{}')).toEqual({
+      framework: 'html',
+      projectId: 'p',
+      port: 4689,
+    });
+    expect(io.lines.join('\n')).toContain('port 4688 → 4689');
+  });
+
+  it('leaves an existing non-JS .reticle.json alone when the port is unchanged', () => {
+    const io = memoryIo({
+      'requirements.txt': 'fastapi\n',
+      '.reticle.json': JSON.stringify({ framework: 'html', projectId: 'p', port: 4688 }),
+    });
+    runInit({ ...OPTS, port: 4688 }, io);
+    expect(io.written['.reticle.json']).toBeUndefined();
   });
 
   it('hands a Streamlit app its executable HTML helper', () => {
@@ -421,6 +449,29 @@ describe('runInit', () => {
     expect(r.applied).toBeGreaterThan(0);
   });
 
+  it.each([
+    ['vite', VITE_FILES],
+    ['empty directory', {}],
+    ['Django', { 'manage.py': 'from django.core.management import execute_from_command_line' }],
+    ['Streamlit', { 'requirements.txt': 'streamlit', 'app.py': 'import streamlit as st' }],
+    ['malformed manifest', { 'package.json': '{ bad json' }],
+  ])('dry run has no provisioning or outcome side effects for %s', (_name, files) => {
+    const io = memoryIo(files);
+    const pairingToken = vi.fn(() => HOST_TOKEN);
+    const reportOutcome = vi.fn();
+    runInit(
+      { ...OPTS, dryRun: true },
+      {
+        ...io,
+        host: { ...io.host, pairingToken, reportOutcome },
+      },
+    );
+    expect(io.written).toEqual({});
+    expect(io.execCalls).toEqual([]);
+    expect(pairingToken).not.toHaveBeenCalled();
+    expect(reportOutcome).not.toHaveBeenCalled();
+  });
+
   it('asks for feedback on EVERY exit, including the ones that never reach the report', () => {
     // This shipped as dead code: the print sat after a `return` in report(), so the whole standing
     // ask was unreachable and nothing failed — no test named it, and a missing line prints nothing.
@@ -437,6 +488,14 @@ describe('runInit', () => {
     const noPkg = memoryIo({});
     runInit(OPTS, noPkg);
     expect(noPkg.lines.join('\n')).toContain(FEEDBACK_HINT);
+  });
+
+  // When the runtime follows (dev server, browser, connect), asking here put the request for
+  // feedback in the middle of the output, before anything had happened. The runtime asks last.
+  it('leaves the ask to the runtime when one follows', () => {
+    const io = memoryIo(VITE_FILES);
+    runInit({ ...OPTS, continuesToRuntime: true }, io);
+    expect(io.lines.join('\n')).not.toContain(FEEDBACK_HINT);
   });
 
   it('runs the install when enabled, pinned to the CLI version', () => {
@@ -586,6 +645,18 @@ describe('runInit — workspace roots', () => {
     const r = runInit({ ...OPTS, app: 'apps/nope' }, io);
     expect(r.ok).toBe(false);
     expect(io.lines.join('\n')).toContain('--app apps/nope');
+  });
+
+  it('names the ecosystem when --app points at a non-JS project', () => {
+    const io = memoryIo({
+      'package.json': JSON.stringify({ name: 'mono', private: true }),
+      'apps/mobile/pubspec.yaml': 'name: mobile\n',
+    });
+    const r = runInit({ ...OPTS, app: 'apps/mobile' }, io);
+    expect(r.ok).toBe(false);
+    const out = io.lines.join('\n');
+    expect(out).toContain('This is a Flutter project.');
+    expect(out).not.toContain('does not name a directory with a package.json');
   });
 
   it('asks for feedback exactly once, even though the redirect re-enters init', () => {
@@ -1177,6 +1248,19 @@ describe('runInit honours --url on the package-manager preflight', () => {
     const io = memoryIo(PNPM_APP, noTooling);
     runInit({ ...OPTS, dryRun: true }, io);
     expect(io.lines.join('\n')).toContain('is not installed on this machine');
+  });
+
+  it('reports a preflight failure even when the caller defers the runtime outcome', () => {
+    const io = memoryIo(PNPM_APP, noTooling);
+    const reportOutcome = vi.fn();
+    runInit(
+      { ...OPTS, deferOutcome: true },
+      {
+        ...io,
+        host: { ...io.host, reportOutcome },
+      },
+    );
+    expect(reportOutcome).toHaveBeenCalledExactlyOnceWith({ ok: false, reason: 'preflight' });
   });
 
   it('does not refuse when the app is already served', () => {

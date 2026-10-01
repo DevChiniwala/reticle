@@ -3,7 +3,7 @@ name: verify-ui-change
 description: Check that a change to a web app actually works in the running app before calling it done. Drives the real page and returns a pass/fail verdict with the request that fired, the state that moved, and the file:line to fix. Use after editing a component, a form, a route, or an API call; when you have said "fixed" but have not opened the app; when the user asks "does it actually work?"; or when a change looks right on screen and you cannot prove it.
 license: Apache-2.0
 metadata:
-  version: 3.3.0
+  version: 3.4.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -40,7 +40,7 @@ reticle_act_and_wait({ sessionId, ref, action: "click", until: { kind: "allOf", 
 
 Multi-step journey? Drive it in one call with `reticle_act { steps: [...] }`, then assert the outcome once. Do not act → snapshot → act → snapshot: it proves the same thing at several times the cost.
 
-**Only `reticle_act_and_wait` and `reticle_assert` produce a verdict.** `reticle_act`, `snapshot`, `query`, `navigate`, `network` and `console` move or read the app and prove nothing. A drive that ends without one of the first two has no result, however many calls it made.
+**Verdicts come from `reticle_act_and_wait`, `reticle_assert`, and `reticle_act { steps }` when a step declares `expect`.** A bare `reticle_act`, `look`, `navigate` and `observe` move or read the app and prove nothing. A drive that ends without a verdict has no result, however many calls it made.
 
 ## 3. Read the verdict honestly
 
@@ -70,4 +70,4 @@ Then `reticle_session({ action: "yield", mode: "waiting" })` so the human's pane
 
 ---
 
-More detail, fetchable one page at a time: `curl https://docs.reticle.sh/llms.txt` for the index, then the single page you need (`tools/act-and-wait.md`, `predicates.md`, `troubleshooting.md`). If Reticle itself misbehaves, file it with `reticle_session { action: "feedback" }`: one call, then carry on.
+More detail, fetchable one page at a time: `curl https://docs.reticle.sh/llms.txt` for the index, then the single page you need (`https://docs.reticle.sh/tools/act-and-wait.md`, `https://docs.reticle.sh/predicates.md`, `https://docs.reticle.sh/troubleshooting.md`). If Reticle itself misbehaves, file it with `reticle_session { action: "feedback" }`: one call, then carry on.

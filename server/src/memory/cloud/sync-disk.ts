@@ -64,12 +64,22 @@ function readJsonDir(dir: string): unknown[] {
   }
 }
 
-/** Flows live one directory deeper, under the app's own project id. */
+/**
+ * Flows: one directory deeper under the app's own project id, and also flat in `.reticle/flows/`,
+ * which the flow store still saves and loads (a flow saved with no project id, or from before flows
+ * were kept per project). Reading only the subfolders skipped every flat flow while the cycle
+ * reported ok.
+ */
 function readFlows(root: string): unknown[] {
   const dir = join(root, ReticleDir.FLOWS_SUBDIR);
   try {
     if (!existsSync(dir)) return [];
-    return readdirSync(dir).flatMap((scope) => readJsonDir(join(dir, scope)));
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.isDirectory()) return readJsonDir(join(dir, entry.name));
+      if (!entry.name.endsWith(JSON_SUFFIX)) return [];
+      const flow = readJson(join(dir, entry.name));
+      return flow === undefined ? [] : [flow];
+    });
   } catch {
     return [];
   }
@@ -79,6 +89,8 @@ const DERIVED_FILE = {
   impact: ReticleDir.IMPACT_FILE,
   flake: ReticleDir.FLAKE_FILE,
   intent: ReticleDir.INTENT_FILE,
+  envelopes: ReticleDir.ENVELOPES_FILE,
+  'assertion-tiers': ReticleDir.TIERS_FILE,
 } as const;
 
 /** The directory the sharded intent store writes into, beside the legacy flat file. */
