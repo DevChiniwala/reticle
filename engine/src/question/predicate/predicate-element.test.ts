@@ -88,9 +88,7 @@ it('names the aria-hidden exclusion on a state near-miss', async () => {
   const relaxed: MatchResult = {
     matched: true,
     count: 1,
-    elements: [
-      { ref: ariaHiddenRef, role: 'text', name: '', states: ['hidden'], visible: false },
-    ],
+    elements: [{ ref: ariaHiddenRef, role: 'text', name: '', states: ['hidden'], visible: false }],
   };
   const result = await evalElement(
     scriptedSession([miss, relaxed]),
