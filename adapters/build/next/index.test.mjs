@@ -133,6 +133,7 @@ describe('withReticle', () => {
   it('installs no Turbopack loader when sourceMapping is off (#1248)', () => {
     process.env.NODE_ENV = 'development';
     const config = withReticle({}, { sourceMapping: false });
+    expect(config).toHaveProperty('turbopack');
     const rules = config.turbopack?.rules ?? {};
     expect(rules['*.tsx']).toBeUndefined();
     expect(rules['*.jsx']).toBeUndefined();
