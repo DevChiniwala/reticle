@@ -146,9 +146,9 @@ describe('act_and_wait and assert see the same evidence', () => {
     }
   });
 
-  it('both paths pass namedNetUrls so an unrelated duplicate does not downgrade the verdict (#1235)', () => {
+  it('both paths pass predicate-derived URLs to contradiction detection (#1235)', () => {
     for (const file of [act, assert]) {
-      expect(file).toMatch(/namedNetUrls:/);
+      expect(file).toMatch(/findContradictions\([\s\S]*?namedNetUrls: declared\.netUrls/);
     }
   });
 
