@@ -109,19 +109,22 @@ function annotateThrottledMiss(
  * The starved-tab caveat is for a page that may not have painted. Evidence that the page IS alive
  * means the miss is real, not an artefact of throttling.
  *
- * - `splitText`: the browser found the string in the rendered page, split across children.
- * - `nearMiss`: the element exists (just wrong state or name) — the DOM painted.
- * - `presentTestids`: testids are on the page — it rendered enough for the SDK to stamp them.
+ * - `splitText`: the browser found the requested string in the rendered page, split across
+ *   children. Target-specific — the text IS the thing that was asked for.
+ * - `nearMiss` from `element.state`: the target element exists but in the wrong state. The DOM
+ *   painted the element itself, so starvation is not the explanation.
+ *
+ * Excluded:
+ * - `nearMiss` from `element.role+name`: a role-only match on a partially rendered page does not
+ *   prove the named target rendered. The same role may come from a static shell.
+ * - `presentTestids`: testids can come from a static shell or another part of a partially rendered
+ *   page while the requested target remains starved.
  */
 function evidenceProvesPageRendered(result: EvalResult): boolean {
   const evidence = result.evidence;
   if ('object' !== typeof evidence || null === evidence) return false;
   if ('splitText' in evidence) return true;
-  if ('nearMiss' in evidence) return true;
-  if ('presentTestids' in evidence) {
-    const ids = evidence.presentTestids;
-    return Array.isArray(ids) && ids.length > 0;
-  }
+  if ('nearMiss' in evidence && 'element.state' === result.assertion) return true;
   return false;
 }
 
