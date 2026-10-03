@@ -310,6 +310,48 @@ describe('reticle_verify_change — a green suite is not the end of the check', 
     expect(sequentialRun['measured']).toContain('contradictions');
     affectedSpy.mockRestore();
   });
+
+  it('an advisory duplicate does not downgrade the verdict (#1235)', async () => {
+    const verify = FLOW_TOOLS.find((t) => t.name === ReticleTool.FLOW_VERIFY);
+    if (verify === undefined) throw new Error('flow_verify missing');
+    vi.spyOn(verify, 'handler').mockResolvedValue(passingSuite);
+    const affectedSpy = vi
+      .spyOn(await import('./change/flow-sources.js'), 'affectedSavedFlows')
+      .mockReturnValue({ affected: ['checkout'], unknownProvenance: [] });
+    const contradictionSpy = vi
+      .spyOn(await import('@reticlehq/engine/disagreement/contradictions.js'), 'findContradictions')
+      .mockReturnValue([{ kind: 'duplicate-request-unrelated' }] as never);
+
+    const result = (await tool.handler(sessionWith([], '', []), {
+      files: ['src/Checkout.tsx'],
+    })) as Record<string, unknown>;
+
+    expect(result['verified']).toBe(Verified.YES);
+    expect(result['contradictions']).toBeUndefined();
+    affectedSpy.mockRestore();
+    contradictionSpy.mockRestore();
+  });
+
+  it('a verdict-deciding duplicate still downgrades (#1235)', async () => {
+    const verify = FLOW_TOOLS.find((t) => t.name === ReticleTool.FLOW_VERIFY);
+    if (verify === undefined) throw new Error('flow_verify missing');
+    vi.spyOn(verify, 'handler').mockResolvedValue(passingSuite);
+    const affectedSpy = vi
+      .spyOn(await import('./change/flow-sources.js'), 'affectedSavedFlows')
+      .mockReturnValue({ affected: ['checkout'], unknownProvenance: [] });
+    const contradictionSpy = vi
+      .spyOn(await import('@reticlehq/engine/disagreement/contradictions.js'), 'findContradictions')
+      .mockReturnValue([{ kind: 'duplicate-request' }] as never);
+
+    const result = (await tool.handler(sessionWith([], '', []), {
+      files: ['src/Checkout.tsx'],
+    })) as Record<string, unknown>;
+
+    expect(result['verified']).toBe(Verified.NO);
+    expect(String(result['because'])).toContain('duplicate-request');
+    affectedSpy.mockRestore();
+    contradictionSpy.mockRestore();
+  });
 });
 
 /**
