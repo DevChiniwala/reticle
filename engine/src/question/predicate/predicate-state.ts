@@ -9,6 +9,7 @@
 
 import { PredicateKind, ReticleCommand, capDepth, selectPath } from '@reticlehq/core';
 import { matchValue, type EvalResult, type Predicate } from './predicate-eval.js';
+import { isStringifiedPrimitiveMismatch } from './predicate-eval-kit.js';
 import { satisfiesProperty, type Baseline } from './property.js';
 import type { PredicateSession } from './predicate-session.js';
 
@@ -174,6 +175,19 @@ async function evalStateNamed(
       evidence: { store: storeName, path: p.path, value: capDepth(selection.value, 1) },
     };
   }
+  if (isStringifiedPrimitiveMismatch(selection.value, want)) {
+    const reason =
+      `state '${p.path}' is ${JSON.stringify(selection.value)} (${null === selection.value ? 'null' : typeof selection.value}), ` +
+      `but the expected value ${JSON.stringify(want)} is a string that looks like its stringified form — ` +
+      `use the ${null === selection.value ? 'null' : typeof selection.value} literal ${JSON.stringify(selection.value)} instead`;
+    return {
+      pass: false,
+      failureReason: reason,
+      inconclusive: reason,
+      assertion: 'state.equals',
+      evidence: { store: storeName, path: p.path, value: capDepth(selection.value, 1) },
+    };
+  }
   return {
     pass: false,
     failureReason: `state '${p.path}' is ${JSON.stringify(capDepth(selection.value, 0))}, expected ${JSON.stringify(want)}`,
@@ -323,6 +337,19 @@ export async function evalState(
   if (matchValue(selection.value, want)) {
     return {
       pass: true,
+      evidence: { store: storeName, path: p.path, value: capDepth(selection.value, 1) },
+    };
+  }
+  if (isStringifiedPrimitiveMismatch(selection.value, want)) {
+    const reason =
+      `state '${p.path}' is ${JSON.stringify(selection.value)} (${null === selection.value ? 'null' : typeof selection.value}), ` +
+      `but the expected value ${JSON.stringify(want)} is a string that looks like its stringified form — ` +
+      `use the ${null === selection.value ? 'null' : typeof selection.value} literal ${JSON.stringify(selection.value)} instead`;
+    return {
+      pass: false,
+      failureReason: reason,
+      inconclusive: reason,
+      assertion: 'state.equals',
       evidence: { store: storeName, path: p.path, value: capDepth(selection.value, 1) },
     };
   }

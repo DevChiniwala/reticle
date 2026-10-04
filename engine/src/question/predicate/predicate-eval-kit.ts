@@ -133,6 +133,19 @@ export function matchValue(got: unknown, want: unknown): boolean {
 }
 
 /**
+ * Detects the #1117 pattern: an MCP client stringified a primitive before sending it, so
+ * `false` arrived as `"false"`, `42` as `"42"`, `null` as `"null"`. The store holds the real
+ * type and the comparison is a type mismatch, not a value mismatch — inconclusive, not `no`.
+ */
+export function isStringifiedPrimitiveMismatch(got: unknown, want: unknown): boolean {
+  if ('string' !== typeof want) return false;
+  if ('boolean' === typeof got || 'number' === typeof got || null === got) {
+    return String(got) === want;
+  }
+  return false;
+}
+
+/**
  * Value equality for the leaf comparison, because `===` could never match a literal.
  *
  * The expected side of a predicate is parsed out of the agent's JSON, so it is a fresh object every
