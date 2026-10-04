@@ -10,6 +10,7 @@
 import type { Session } from '@/portal/session/session.js';
 import { z } from 'zod';
 import { aliasParam } from './args/alias-args.js';
+import { coerceRecord } from './args/coerce-record.js';
 import { resolveSessionWithin } from '@/portal/session/timing/resolve-within.js';
 import { WALL_CLOCK } from '@/portal/session/timing/wall-clock.js';
 import { timeoutMsSchema } from './args/numeric-bounds.js';
@@ -141,7 +142,7 @@ export async function actCommand(
   const rewritten = await rewriteUploadArgs(
     deps,
     'string' === typeof actArgs['action'] ? actArgs['action'] : '',
-    asRecord(actArgs['args']),
+    coerceRecord(actArgs['args'], 'args'),
   );
   // Sequence and act_and_wait dispatch through here without the ACT handler's tryRealInput.
   // A synthetic hover reports dispatched/settled while CSS :hover never applies — drive a real

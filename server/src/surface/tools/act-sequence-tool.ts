@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { timeoutMsSchema } from './args/numeric-bounds.js';
+import { coerceRecord } from './args/coerce-record.js';
 import { compileSequenceStep, pathOf } from '@/language/flows/replay.js';
 import { sequenceStepArgs } from './act/act-preflight.js';
 import { ReticleTool } from '@reticlehq/core';
@@ -182,7 +183,7 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
       // replay sends one batched ACT_SEQUENCE command (flows/replay.ts:294). A bug in either is
       // invisible from the other — cover both when changing sequence semantics.
       for (let i = 0; i < inputSteps.length; i++) {
-        const step = asRecord(inputSteps[i]);
+        const step = coerceRecord(inputSteps[i], `steps[${String(i)}]`);
         const stepSince = session.elapsed();
         try {
           // One retry when the ref went stale under a re-render — see act-sequence-retry.ts.
