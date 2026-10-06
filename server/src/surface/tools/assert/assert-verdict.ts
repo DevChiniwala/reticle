@@ -1,4 +1,4 @@
-import { CaptureLoss, channelsReadBy, PredicateKind } from '@reticlehq/core';
+import { CaptureLoss, ChannelId, channelsReadBy, PredicateKind } from '@reticlehq/core';
 import { sessionVerdictFacts } from '@/portal/session/session-verdict-facts.js';
 import { gapsForAction } from '@reticlehq/engine/evidence/instrumentation-gaps.js';
 import { noteSessionGaps } from '@reticlehq/engine/evidence/gap-ledger.js';
@@ -201,11 +201,19 @@ export async function assertVerdict(
    * absence of evidence read as evidence of absence. The act path needs no `restsOnComplete` guard:
    * its cursor is the action's own.
    */
-  const bufferLost = session.lostSince(since) && restsOnComplete;
+  const EVENT_HISTORY_CHANNELS: ReadonlySet<ChannelId> = new Set([
+    ChannelId.NET,
+    ChannelId.SIGNAL,
+    ChannelId.LOG,
+  ]);
+  const readsEventHistory = channelsReadBy(predicate).some((ch) => EVENT_HISTORY_CHANNELS.has(ch));
+  const bufferLost =
+    session.lostSince(since) && (restsOnComplete || (false === pass && readsEventHistory));
   /** The durable ledger refused writes, on a query path that read from it. Same rule, other store. */
-  const ledgerLost = ledgerClosed && restsOnComplete;
+  const ledgerLost = ledgerClosed && (restsOnComplete || (false === pass && readsEventHistory));
+  const lostEvidence = (bufferLost || ledgerLost) && false === pass && readsEventHistory;
   const decision = decideVerified({
-    pass,
+    ...(lostEvidence ? {} : { pass }),
     // What this claim needs to read, against what the page said it can see -- the protocol's
     // first clause, and one this implementation could not run until the page started declaring.
     // Both halves are conditional on purpose: an SDK too old to declare sends nothing, and

@@ -1,0 +1,3 @@
+### Fixed
+
+- **`@reticlehq/server` — a failed event-history assertion whose evidence was evicted now says `unknown`, not `no`.** A `net`, `signal`, or `console` assertion that failed over a window with lost evidence returned `verified: "no"` / `assertion_failed`, blaming the app for something that may not be wrong — the event that would have satisfied the claim may have rolled out of the buffer. Buffer loss now impeaches failures only for predicates that read event history, so a live-DOM failure (`element`, `text`, `state`) still grades `no`. Closes [#1231](https://github.com/reticlehq/reticle/issues/1231).
