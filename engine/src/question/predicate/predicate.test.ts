@@ -1529,6 +1529,16 @@ describe('state predicate — stringified primitive equals is inconclusive, not 
     );
     expect(r.pass).toBe(true);
   });
+
+  it('store-less path: equals "false" against boolean false is inconclusive', async () => {
+    const r = await evaluatePredicate(new StateSession({ flags: { enabled: false } }), {
+      kind: 'state',
+      path: 'enabled',
+      equals: 'false',
+    });
+    expect(r.pass).toBe(false);
+    expect(r.inconclusive).toBeDefined();
+  });
 });
 
 /** Session that lets the test drive events and control when each command resolves, to prove the

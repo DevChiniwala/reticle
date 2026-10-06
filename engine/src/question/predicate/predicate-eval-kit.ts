@@ -146,6 +146,38 @@ export function isStringifiedPrimitiveMismatch(got: unknown, want: unknown): boo
 }
 
 /**
+ * The inconclusive result for a stringified-primitive mismatch on a state `equals` check.
+ * Shared by both `evalStateNamed` and `evalState` so the reason and evidence shape stay in one
+ * place.
+ */
+export function stringifiedPrimitiveResult(
+  storeName: string,
+  path: string,
+  got: unknown,
+  want: unknown,
+  capDepth: (v: unknown, d: number) => unknown,
+): {
+  pass: false;
+  failureReason: string;
+  inconclusive: string;
+  assertion: string;
+  evidence: Record<string, unknown>;
+} {
+  const gotType = null === got ? 'null' : typeof got;
+  const reason =
+    `state '${path}' is ${JSON.stringify(got)} (${gotType}), ` +
+    `but the expected value ${JSON.stringify(want)} is a string that looks like its stringified form — ` +
+    `use the ${gotType} literal ${JSON.stringify(got)} instead`;
+  return {
+    pass: false,
+    failureReason: reason,
+    inconclusive: reason,
+    assertion: 'state.equals',
+    evidence: { store: storeName, path, value: capDepth(got, 1) },
+  };
+}
+
+/**
  * Value equality for the leaf comparison, because `===` could never match a literal.
  *
  * The expected side of a predicate is parsed out of the agent's JSON, so it is a fresh object every
