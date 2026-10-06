@@ -58,6 +58,24 @@ describe('a step written the way reticle_act takes one', () => {
       confirmDangerous: true,
     });
   });
+
+  it('parses a valid JSON-object string in args (#1230)', () => {
+    expect(sequenceStepArgs({ ref: 'e1', action: 'fill', args: '{"value":"hi"}' })).toEqual({
+      value: 'hi',
+    });
+  });
+
+  it('refuses an invalid JSON string in args (#1230)', () => {
+    expect(() => sequenceStepArgs({ ref: 'e1', action: 'fill', args: '{broken' })).toThrow(
+      /not valid JSON/,
+    );
+  });
+
+  it('refuses a JSON string that is not an object (#1230)', () => {
+    expect(() => sequenceStepArgs({ ref: 'e1', action: 'fill', args: '"just a string"' })).toThrow(
+      /not an object/,
+    );
+  });
 });
 
 describe('refusing a sequence that cannot act', () => {

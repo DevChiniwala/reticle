@@ -85,6 +85,22 @@ export function sequenceStepArgs(step: Record<string, unknown>): Record<string, 
     if (!STEP_STRUCTURE_KEYS.has(key)) flat[key] = value;
   }
   const nested = step['args'];
+  if ('string' === typeof nested) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(nested);
+    } catch {
+      throw new Error(
+        `step.args is a string that is not valid JSON — pass an object, not a string. Got: ${nested.slice(0, 120)}`,
+      );
+    }
+    if (null === parsed || 'object' !== typeof parsed || Array.isArray(parsed)) {
+      throw new Error(
+        `step.args is a JSON string but not an object — pass an object, not ${null === parsed ? 'null' : typeof parsed}. Got: ${nested.slice(0, 120)}`,
+      );
+    }
+    return { ...flat, ...(parsed as Record<string, unknown>) };
+  }
   return { ...flat, ...(null !== nested && 'object' === typeof nested ? nested : {}) };
 }
 

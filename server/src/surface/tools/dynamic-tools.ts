@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { coerceRecord } from './args/coerce-record.js';
 import type { ToolDef, ToolDeps } from './tool-kit.js';
 import { runTool } from './invoke-tool.js';
 import { buildErrorPayload } from './error-recovery.js';
@@ -282,7 +281,10 @@ export function buildDynamicTools(
         };
       }
       const name = 'string' === typeof args['tool'] ? args['tool'] : '';
-      const given = coerceRecord(args['args'], 'args');
+      const given =
+        'object' === typeof args['args'] && args['args'] !== null
+          ? (args['args'] as Record<string, unknown>)
+          : {};
       const aimed = args['sessionId'];
       const target = byName.get(name);
       if (target === undefined) {
