@@ -149,6 +149,7 @@ describe('act_and_wait and assert see the same evidence', () => {
   it('both paths pass predicate-derived URLs to contradiction detection (#1235)', () => {
     for (const file of [act, assert]) {
       expect(file).toMatch(/findContradictions\([\s\S]*?namedNetUrls: declared\.netUrls/);
+      expect(file).toMatch(/namedNetClauses: declared\.netClauses/);
     }
   });
 
