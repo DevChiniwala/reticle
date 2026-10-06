@@ -132,3 +132,32 @@ describe('a case-exact text check that missed only on case', () => {
     expect(r.hint?.caseMiss).toBeUndefined();
   });
 });
+
+describe('ariaHiddenMatch hint names the accessibility exclusion (#1070)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('reports when a text search misses and the string is inside an aria-hidden subtree', () => {
+    document.body.innerHTML =
+      '<div aria-hidden="true"><span>Order </span><span>confirmed</span></div>';
+    const r = runQuery({ text: 'Order confirmed' });
+    expect(r.elements).toHaveLength(0);
+    expect(r.hint?.ariaHiddenMatch).toBe(true);
+  });
+
+  it('stays silent when the text is hidden by CSS, not just aria-hidden', () => {
+    document.body.innerHTML =
+      '<div style="display: none" aria-hidden="true"><span>Order </span><span>confirmed</span></div>';
+    const r = runQuery({ text: 'Order confirmed' });
+    expect(r.elements).toHaveLength(0);
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+
+  it('stays silent when the text is genuinely absent', () => {
+    document.body.innerHTML = '<div><span>Nothing here</span></div>';
+    const r = runQuery({ text: 'Order confirmed' });
+    expect(r.elements).toHaveLength(0);
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+});

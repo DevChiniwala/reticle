@@ -20,6 +20,7 @@ import {
   getRole,
   describe,
   getStates,
+  isHiddenByAriaOnly,
   isInViewport,
   isVisible,
 } from './a11y.js';
@@ -604,7 +605,7 @@ export function matchQuery(
     // PREDICATE uses, so without this a failed assertion was a dead end ("no element matched") while
     // the identical failure through reticle_query listed the testids that ARE present. Computed only
     // when there is nothing to report, so the hot path pays nothing.
-    ...(0 === filtered.length ? { hint: buildEmptyHint(query) } : {}),
+    ...(0 === filtered.length ? { hint: buildEmptyHint(query, state) } : {}),
   };
 }
 
@@ -818,8 +819,17 @@ function testidFoundUnder(container: HTMLElement, query: ElementQuery): string |
   return undefined;
 }
 
+function textInAriaHidden(container: HTMLElement, wanted: string): boolean {
+  for (const el of elementsUnder(container)) {
+    if (isIgnored(el)) continue;
+    if (!isHiddenByAriaOnly(el)) continue;
+    if (fuzzyVisibleText(el.textContent ?? '', wanted)) return true;
+  }
+  return false;
+}
+
 /** Diagnostic hint for a zero-match query: what testids ARE present in the searched scope. */
-function buildEmptyHint(query: ElementQuery): QueryEmptyHint {
+function buildEmptyHint(query: ElementQuery, state?: ElementState): QueryEmptyHint {
   const container = resolveContainer(query.scope).container ?? document.body;
   const all = container.querySelectorAll(testIdSelector());
   const present: string[] = [];
@@ -858,6 +868,16 @@ function buildEmptyHint(query: ElementQuery): QueryEmptyHint {
       const shown = caseOnlyMatch(container, wanted);
       if (shown !== undefined) hint.caseMiss = shown;
     }
+  }
+  // A text or name match hidden only by aria-hidden — drawn on screen but excluded from the
+  // accessible tree. Only for visibility-related misses: a `state: 'checked'` miss on a visible
+  // element should blame the state, not an unrelated aria-hidden twin (#1070).
+  if (
+    wanted !== undefined &&
+    hint.splitText === undefined &&
+    (state === undefined || ElementState.VISIBLE === state || ElementState.IN_VIEWPORT === state)
+  ) {
+    if (textInAriaHidden(container, wanted)) hint.ariaHiddenMatch = true;
   }
   const near = nameNearMisses(container, query);
   if (near.length > 0) hint.nameNearMiss = near;
