@@ -55,7 +55,7 @@ describe('a declared failing request is a declaration, not a contradiction', () 
   // Negative control: under anyOf nothing is guaranteed to have held, so a declaration there is not
   // a declaration about this window. Honouring it would suppress a real contradiction on the
   // strength of a branch that never ran.
-  it('ignores an anyOf branch — nothing in it is guaranteed to have held', () => {
+  it('ignores an anyOf branch for consequences — nothing in it is guaranteed to have held', () => {
     const declared = declaredExpectations({
       kind: PredicateKind.ANY_OF,
       predicates: [
@@ -65,6 +65,18 @@ describe('a declared failing request is a declaration, not a contradiction', () 
     });
     expect(declared.netFailures).toEqual([]);
     expect(declared.rendersContent).toBe(false);
+  });
+
+  it('walks anyOf branches for net URLs — traffic the caller mentioned must not be filtered (#1234)', () => {
+    const declared = declaredExpectations({
+      kind: PredicateKind.ANY_OF,
+      predicates: [
+        { kind: PredicateKind.NET, urlContains: '/api/login', method: 'POST' },
+        { kind: PredicateKind.TEXT, contains: 'Welcome' },
+      ],
+    });
+    expect(declared.netUrls).toEqual(['/api/login']);
+    expect(declared.netClauses).toEqual([{ urlContains: '/api/login', method: 'POST' }]);
   });
 
   it('ignores a negated branch — `not` declares the opposite of a consequence', () => {
