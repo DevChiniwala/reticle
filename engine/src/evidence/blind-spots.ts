@@ -12,6 +12,7 @@ import {
   BlindSpotKind,
   EventType,
   PredicateKind,
+  QueryBy,
   ReticleEnv,
   TRANSPORT_LIMITS,
   isDesktopBlindSpot,
@@ -223,7 +224,12 @@ function droppedByTransport(events: readonly ReticleEvent[]): number {
 interface AbsencePredicate {
   kind: string;
   absent?: boolean;
-  query?: { scope?: unknown; role?: string | undefined };
+  query?: {
+    scope?: unknown;
+    role?: string | undefined;
+    by?: string | undefined;
+    value?: string | undefined;
+  };
   predicate?: AbsencePredicate;
 }
 
@@ -237,10 +243,7 @@ const NEVER_VIRTUALIZED_ROLES: ReadonlySet<string> = new Set([
   'alertdialog',
   'banner',
   'contentinfo',
-  'complementary',
   'main',
-  'navigation',
-  'region',
 ]);
 
 /**
@@ -271,7 +274,9 @@ export function absenceBlindSpotNote(
   }
   if (PredicateKind.ELEMENT !== predicate.kind || true !== predicate.absent) return undefined;
 
-  const role = predicate.query?.role;
+  const role =
+    predicate.query?.role ??
+    (QueryBy.ROLE === predicate.query?.by ? predicate.query.value : undefined);
   const relevant = spots.filter(
     (spot) =>
       spot.count > 0 &&

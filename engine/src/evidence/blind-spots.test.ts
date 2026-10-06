@@ -175,8 +175,22 @@ describe('absenceBlindSpotNote', () => {
     expect(absenceBlindSpotNote(pred, virtualizedSpot)).toBeUndefined();
   });
 
-  it('a landmark absence (navigation) cannot be a virtualized row (#1236)', () => {
+  it('a region absence IS threatened by virtualization — regions can be list rows (#1236)', () => {
+    const pred: AbsencePred = { kind: 'element', absent: true, query: { role: 'region' } };
+    expect(absenceBlindSpotNote(pred, virtualizedSpot)).toContain('cannot prove absence');
+  });
+
+  it('a navigation absence IS threatened by virtualization (#1236)', () => {
     const pred: AbsencePred = { kind: 'element', absent: true, query: { role: 'navigation' } };
+    expect(absenceBlindSpotNote(pred, virtualizedSpot)).toContain('cannot prove absence');
+  });
+
+  it('by-role query form: dialog absence is immune to virtualization (#1236)', () => {
+    const pred: AbsencePred = {
+      kind: 'element',
+      absent: true,
+      query: { by: 'role', value: 'dialog' },
+    };
     expect(absenceBlindSpotNote(pred, virtualizedSpot)).toBeUndefined();
   });
 
