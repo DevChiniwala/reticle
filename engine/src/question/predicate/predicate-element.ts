@@ -33,6 +33,9 @@ import { describeSplitTextMiss } from './split-text-miss.js';
 import { satisfiesProperty, type Baseline, type PropertyAssertion } from './property.js';
 import { describeNameNearMiss } from './name-near-miss.js';
 
+export const ARIA_HIDDEN_NOTE =
+  'text is inside an aria-hidden subtree — drawn on screen but excluded from the accessible tree';
+
 /**
  * The caveat for a present-testid list that was cut at its cap, or nothing when it was whole.
  *
@@ -340,8 +343,9 @@ export async function evalElement(
   // already limited to that role.
   const nearMissRole = QueryBy.ROLE === query.by ? query.value : query.role;
   const nearMiss = describeNameNearMiss(match.hint?.nameNearMiss, query.name, nearMissRole);
+  const ariaNote = true === match.hint?.ariaHiddenMatch ? ARIA_HIDDEN_NOTE : undefined;
   const clause =
-    splitText ?? nearMiss ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
+    splitText ?? nearMiss ?? ariaNote ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
   const suffix = clause === undefined ? '' : ` — ${clause}`;
   // The evidence list is capped in document order, so a region low on the page is exactly what it
   // drops. Handed back with no marker it reads as the whole page, and the field report this came
