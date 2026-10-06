@@ -12,10 +12,12 @@
  *  - A destination whose content was asserted and FOUND was still reported as
  *    `route-rendered-nothing`, a clause the element evidence beside it disproves.
  *
- * Deliberately conservative about what counts as declared. Only what the caller REQUIRED is read:
- * the top level and `allOf` chains. An `anyOf` branch may never have held, and a `not` declares the
- * opposite of a consequence — honouring either would suppress a real finding on the strength of
- * something that never happened. Pure: a predicate in, a description out.
+ * Deliberately conservative about what counts as declared. For CONSEQUENCES (`netFailures`,
+ * `rendersContent`), only the top level and `allOf` chains are walked: an `anyOf` branch may never
+ * have held, and a `not` declares the opposite. For MENTIONED TRAFFIC (`netUrls`, `netClauses`),
+ * `anyOf` is walked too: a request matching any declared clause is traffic the caller named, and
+ * filtering it out of the contradiction window is the bug #1234 exists to fix.
+ * Pure: a predicate in, a description out.
  */
 
 import { PredicateKind, QueryBy, compareSourceClauses, type ElementQuery } from '@reticlehq/core';
@@ -31,6 +33,12 @@ export interface DeclaredNetFailure {
 /** A `net { repeatable: true }` clause: the endpoint it declared a read, and its method if named. */
 export interface DeclaredRead {
   urlContains: string;
+  method?: string;
+}
+
+/** A net clause the predicate carries, with the constraints that identify the request it names. */
+export interface DeclaredNetClause {
+  urlContains?: string;
   method?: string;
 }
 
@@ -55,6 +63,15 @@ interface DeclaredExpectations {
    * `urlContains` is never here: the schema refuses it, and it would excuse every request.
    */
   repeatableNetUrls: readonly DeclaredRead[];
+  /**
+   * Every net clause the predicate carries, with URL and method constraints.
+   *
+   * Broader than `netUrls`: includes `anyOf` branches, because a request that matches ANY declared
+   * clause is traffic the caller mentioned. Used by the foreign-traffic exemption (#1234), where
+   * admitting a request the caller never named is a false-green route, but filtering one it DID
+   * name is the bug this field exists to fix.
+   */
+  netClauses: readonly DeclaredNetClause[];
 }
 
 /** Below this, a status is a success or a redirect: not a declared failure. */
@@ -114,8 +131,11 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
   const netFailures: DeclaredNetFailure[] = [];
   const netUrls: string[] = [];
   const repeatableNetUrls: DeclaredRead[] = [];
+  const netClauses: DeclaredNetClause[] = [];
   let rendersContent = false;
 
+  // Conservative walk: allOf chains only. netFailures and rendersContent are REQUIRED expectations;
+  // an anyOf branch may never have held, so honouring it would suppress a real contradiction.
   const walk = (p: Predicate): void => {
     switch (p.kind) {
       case PredicateKind.ALL_OF:
@@ -125,7 +145,6 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
         for (const child of compareSourceClauses(p)) walk(child);
         return;
       case PredicateKind.NET: {
-        netUrls.push(p.urlContains ?? '');
         if (true === p.repeatable && p.urlContains !== undefined && p.urlContains.trim() !== '') {
           repeatableNetUrls.push({
             urlContains: p.urlContains,
@@ -161,8 +180,34 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
     }
   };
 
-  if (predicate !== undefined) walk(predicate);
-  return { netFailures, rendersContent, netUrls, repeatableNetUrls };
+  // Broad walk: includes anyOf branches. Collects every net clause the predicate MENTIONS,
+  // because a request matching any declared clause is traffic the caller named (#1234).
+  const walkNet = (p: Predicate): void => {
+    switch (p.kind) {
+      case PredicateKind.ALL_OF:
+      case PredicateKind.ANY_OF:
+        for (const child of p.predicates) walkNet(child);
+        return;
+      case PredicateKind.COMPARE:
+        for (const child of compareSourceClauses(p)) walkNet(child);
+        return;
+      case PredicateKind.NET:
+        netUrls.push(p.urlContains ?? '');
+        netClauses.push({
+          ...(p.urlContains === undefined ? {} : { urlContains: p.urlContains }),
+          ...(p.method === undefined ? {} : { method: p.method }),
+        });
+        return;
+      default:
+        return;
+    }
+  };
+
+  if (predicate !== undefined) {
+    walk(predicate);
+    walkNet(predicate);
+  }
+  return { netFailures, rendersContent, netUrls, repeatableNetUrls, netClauses };
 }
 
 /**
