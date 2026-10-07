@@ -224,22 +224,30 @@ function readSide(
 /**
  * A thousands-grouped number or a plain one. A comma counts as a separator only in groups of three,
  * so `11,87` (a decimal comma) reads as two numbers, not as 1187 — and two numbers are refused.
+ * Unsigned: the sign is resolved from the prefix by `numberOf`, because formatted currencies place
+ * the symbol between the minus and the digits (`-₹11.87`, `-$50.00`).
  */
-const NUMBER_TOKEN = /-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+const NUMBER_TOKEN = /(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
+
+/** A minus sign at the end of a prefix, separated from the digits only by non-digit non-sign chars. */
+const TRAILING_NEGATIVE = /-[^0-9-]*$/;
 
 /** One number out of a reading, or why there is not exactly one. */
 function numberOf(value: Scalar): { n: number } | { why: string } {
   if ('number' === typeof value)
     return Number.isFinite(value) ? { n: value } : { why: 'is not finite' };
   if ('string' !== typeof value) return { why: `is ${JSON.stringify(value)}, not a number` };
-  const tokens = value.match(NUMBER_TOKEN) ?? [];
-  const [only] = tokens;
-  if (1 !== tokens.length || only === undefined) {
+  const tokens = [...value.matchAll(NUMBER_TOKEN)];
+  if (1 !== tokens.length || tokens[0] === undefined) {
     return {
       why: `holds ${String(tokens.length)} numbers in ${JSON.stringify(value)}, so which one was meant is a guess — narrow the scope to one value`,
     };
   }
-  return { n: Number(only.replace(/,/g, '')) };
+  const m = tokens[0];
+  const prefix = value.slice(0, m.index);
+  const negative = TRAILING_NEGATIVE.test(prefix);
+  const n = Number(m[0].replace(/,/g, ''));
+  return { n: negative ? -n : n };
 }
 
 /**

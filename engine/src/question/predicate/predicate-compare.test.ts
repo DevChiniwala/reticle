@@ -317,6 +317,45 @@ describe('a redacted signal side is unknown, never equal', () => {
   });
 });
 
+describe('negative currency amounts keep their sign (#1309)', () => {
+  it('passes a negative amount formatted with a currency symbol between sign and digits', async () => {
+    const session = new PageSession([refundCall('{"refunded":-11.87}')], {
+      '#refunded': 'Refunded -₹11.87',
+    });
+    const r = await evaluatePredicate(session, compare({ as: 'number' }));
+    expect(r.pass).toBe(true);
+  });
+
+  it('passes a negative dollar amount', async () => {
+    const session = new PageSession([refundCall('{"refunded":-50}')], {
+      '#refunded': '-$50.00',
+    });
+    expect((await evaluatePredicate(session, compare({ as: 'number' }))).pass).toBe(true);
+  });
+
+  it('passes a negative euro amount', async () => {
+    const session = new PageSession([refundCall('{"refunded":-123.45}')], {
+      '#refunded': '-€123.45',
+    });
+    expect((await evaluatePredicate(session, compare({ as: 'number' }))).pass).toBe(true);
+  });
+
+  it('fails when the page drops the negative sign', async () => {
+    const session = new PageSession([refundCall('{"refunded":-11.87}')], {
+      '#refunded': 'Refunded ₹11.87',
+    });
+    const r = await evaluatePredicate(session, compare({ as: 'number' }));
+    expect(r.pass).toBe(false);
+  });
+
+  it('still passes a plain negative without a currency symbol', async () => {
+    const session = new PageSession([refundCall('{"refunded":-11.87}')], {
+      '#refunded': '-11.87',
+    });
+    expect((await evaluatePredicate(session, compare({ as: 'number' }))).pass).toBe(true);
+  });
+});
+
 describe('number equality does not swallow a real difference', () => {
   it('fails 1,000,000,000 against 1,000,000,001', async () => {
     const session = new PageSession([refundCall('{"refunded":1000000001}')], {
