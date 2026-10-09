@@ -141,6 +141,9 @@ export function assertSequenceSteps(steps: readonly unknown[]): void {
           'as a step that declared nothing. Nothing was acted on.',
       );
     }
+    if ('string' === typeof step['args']) {
+      sequenceStepArgs(step);
+    }
     if ('string' === typeof step['ref'] && step['ref'].length > 0) {
       // The same shape check `resolveActTarget` makes, moved ahead of the first step: left there, a
       // malformed ref in step three is only found after steps one and two have already acted.

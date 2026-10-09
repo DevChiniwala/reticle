@@ -78,6 +78,26 @@ describe('a step written the way reticle_act takes one', () => {
   });
 });
 
+describe('string args are refused up front so no step is acted on (#1230)', () => {
+  it('refuses the whole sequence when a later step has invalid string args', () => {
+    expect(() =>
+      assertSequenceSteps([
+        { ref: 'e1', action: 'click' },
+        { ref: 'e2', action: 'fill', args: '{broken' },
+      ]),
+    ).toThrow(/not valid JSON/);
+  });
+
+  it('accepts a sequence where string args parse to a valid object', () => {
+    expect(() =>
+      assertSequenceSteps([
+        { ref: 'e1', action: 'fill', args: '{"value":"hi"}' },
+        { ref: 'e2', action: 'click' },
+      ]),
+    ).not.toThrow();
+  });
+});
+
 describe('refusing a sequence that cannot act', () => {
   it('accepts a step written with `target` instead of `ref`', () => {
     expect(() =>
