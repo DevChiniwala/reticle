@@ -206,14 +206,21 @@ export async function assertVerdict(
     ChannelId.SIGNAL,
     ChannelId.LOG,
   ]);
-  const readsEventHistory = channelsReadBy(predicate).some((ch) => EVENT_HISTORY_CHANNELS.has(ch));
+  // For an `allOf`, a failure is trustworthy when ANY child reads only live DOM: that child's
+  // failure is unaffected by buffer loss. Impeach only when every child reads event history,
+  // because only then could every possible failure be caused by lost data (#1231).
+  const readsEventHistory =
+    PredicateKind.ALL_OF === predicate.kind && predicate.predicates.length > 0
+      ? predicate.predicates.every((child) =>
+          channelsReadBy(child).some((ch) => EVENT_HISTORY_CHANNELS.has(ch)),
+        )
+      : channelsReadBy(predicate).some((ch) => EVENT_HISTORY_CHANNELS.has(ch));
   const bufferLost =
     session.lostSince(since) && (restsOnComplete || (false === pass && readsEventHistory));
   /** The durable ledger refused writes, on a query path that read from it. Same rule, other store. */
   const ledgerLost = ledgerClosed && (restsOnComplete || (false === pass && readsEventHistory));
-  const lostEvidence = (bufferLost || ledgerLost) && false === pass && readsEventHistory;
   const decision = decideVerified({
-    ...(lostEvidence ? {} : { pass }),
+    pass,
     // What this claim needs to read, against what the page said it can see -- the protocol's
     // first clause, and one this implementation could not run until the page started declaring.
     // Both halves are conditional on purpose: an SDK too old to declare sends nothing, and

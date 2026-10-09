@@ -296,6 +296,32 @@ describe('a failing positive assertion with evicted evidence is unknown (#1231)'
     expect(result.verified).toBe(Verified.NO);
     expect(result.verifiedReason).toBe(VerifiedReason.ASSERTION_FAILED);
   });
+
+  it('allOf[net, element] where the net passed but the button is missing grades NO, not unknown', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(0, undefined, true, [
+        {
+          t: 1,
+          type: EventType.NET_REQUEST,
+          sessionId: 'demo',
+          data: { method: 'POST', url: 'http://localhost/api/save', status: 200, ok: true },
+        },
+      ]),
+      {
+        predicate: {
+          kind: 'allOf',
+          predicates: [
+            { kind: 'net', urlContains: '/api/save' },
+            { kind: 'element', query: { role: 'button', name: 'Submit' } },
+          ],
+        },
+        timeout_ms: 0,
+      },
+    )) as { pass?: boolean; verified?: string; verifiedReason?: string };
+    expect(result.pass).toBe(false);
+    expect(result.verified).toBe(Verified.NO);
+    expect(result.verifiedReason).toBe(VerifiedReason.ASSERTION_FAILED);
+  });
 });
 
 /**
