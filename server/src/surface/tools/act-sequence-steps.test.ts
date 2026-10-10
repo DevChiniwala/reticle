@@ -201,7 +201,6 @@ describe('reticle_act_sequence handler with string args (#1230)', () => {
   });
 
   it('an invalid JSON string args refuses the whole sequence before any step runs', async () => {
-    const sent: Record<string, unknown>[] = [];
     await expect(
       dispatchedArgsViaHandler([
         { ref: 'e1', action: 'click' },
