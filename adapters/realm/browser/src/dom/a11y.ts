@@ -473,6 +473,23 @@ export function isHiddenByAriaOnly(el: Element): boolean {
 }
 
 /**
+ * Whether the element is rendered on screen AND not inside an `aria-hidden` subtree.
+ * Returns `false` when any ancestor is CSS-hidden OR carries `aria-hidden="true"`.
+ * Used by the hint builder to suppress the aria-hidden note when a visible, accessible
+ * element also carries the searched text (#1070).
+ */
+export function isRenderedOutsideAriaHidden(el: Element): boolean {
+  let current: Element | null = el;
+  while (null !== current) {
+    if ('true' === current.getAttribute('aria-hidden')) return false;
+    const style = current.ownerDocument.defaultView?.getComputedStyle(current) ?? null;
+    if (selfCssHidden(current, style)) return false;
+    current = parentAcrossShadowBoundary(current);
+  }
+  return true;
+}
+
+/**
  * The slot a light-DOM child renders in when its host's shadow root is CLOSED. `assignedSlot` is
  * null there by design, but a root the registry captured can still be asked from inside which of
  * its slots holds the child. Null when the host has no captured closed root.

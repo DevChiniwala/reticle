@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { runQuery } from './query.js';
+import { ElementState } from '@reticlehq/core';
+import { matchQuery, runQuery } from './query.js';
 import { refs } from './addressing/refs.js';
 
 /**
@@ -137,5 +138,23 @@ describe('ariaHiddenMatch hint names the accessibility exclusion (#1070)', () =>
     const r = runQuery({ text: 'Order confirmed' });
     expect(r.elements).toHaveLength(0);
     expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+
+  it('stays silent when a visible non-aria-hidden element also has the text (#1070)', () => {
+    document.body.innerHTML =
+      '<button style="position:absolute;top:9999px">Order confirmed</button>' +
+      '<div aria-hidden="true"><span>Order confirmed</span></div>';
+    const r = matchQuery({ text: 'Order confirmed' }, ElementState.IN_VIEWPORT);
+    expect(r.count).toBe(0);
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+
+  it('skips the scan on interim polls (diagnose=false)', () => {
+    document.body.innerHTML =
+      '<div aria-hidden="true"><span>Order </span><span>confirmed</span></div>';
+    const interim = matchQuery({ text: 'Order confirmed' }, undefined, undefined, false);
+    expect(interim.hint?.ariaHiddenMatch).toBeUndefined();
+    const final = matchQuery({ text: 'Order confirmed' }, undefined, undefined, true);
+    expect(final.hint?.ariaHiddenMatch).toBe(true);
   });
 });
