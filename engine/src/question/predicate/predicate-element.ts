@@ -76,8 +76,13 @@ async function matchOnce(
   session: PredicateSession,
   query: ElementQuery,
   state: ElementState | undefined,
+  diagnose?: boolean,
 ): Promise<MatchResult> {
-  const res = await session.command(ReticleCommand.MATCH, { query, state });
+  const res = await session.command(ReticleCommand.MATCH, {
+    query,
+    state,
+    ...(true === diagnose ? { diagnose: true } : {}),
+  });
   if (!res.ok) return { matched: false, count: 0, elements: [] };
   return (res.result ?? { matched: false, count: 0, elements: [] }) as MatchResult;
 }
@@ -186,7 +191,7 @@ export async function evalElement(
     const reason = describeUnusableElementQuery(query, residual.unusable);
     return { pass: false, failureReason: reason, inconclusive: reason };
   }
-  let match = await matchOnce(session, withAltProjected(query, residual.checks), state);
+  let match = await matchOnce(session, withAltProjected(query, residual.checks), state, diagnose);
   const subject = JSON.stringify(query);
   // A residual narrows the SET; `count` is every match while `elements` is only the described prefix,
   // so a locator broad enough to be truncated cannot be narrowed honestly. Say so instead of guessing.
