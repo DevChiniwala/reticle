@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ContradictionKind,
   EventType,
+  PredicateKind,
   ROUTE_CHANGE_HOW_FIELD,
   RouteChangeHow,
   Verified,
@@ -11,6 +12,7 @@ import {
 import { findContradictions } from './contradictions.js';
 import { decideVerified } from '../evidence/verified.js';
 import { HonestyGrade } from '../evidence/honesty.js';
+import { declaredExpectations } from '@/question/declared.js';
 
 let seq = 0;
 function ev(type: EventType, data: Record<string, unknown> = {}): ReticleEvent {
@@ -1027,7 +1029,30 @@ describe('the app announced a consequence and nothing else moved', () => {
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
 
+  it('matches method case-insensitively, same as the net predicate (#1234)', () => {
+    const foreignGet = ev(EventType.NET_REQUEST, {
+      id: 'n105',
+      method: 'GET',
+      url: 'http://127.0.0.1:8000/api/queue',
+      status: 200,
+      ok: true,
+    });
+    const found = findContradictions([signal('refresh:done'), foreignGet], {
+      actionSince: 0,
+      appOrigin: 'http://localhost:3000',
+      namedNetClauses: [{ urlContains: '/api/queue', method: 'get' }],
+    });
+    expect(found.map((c) => c.kind)).not.toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
+  });
+
   it('walks anyOf branches when collecting declared net clauses (#1234)', () => {
+    const declared = declaredExpectations({
+      kind: PredicateKind.ANY_OF,
+      predicates: [
+        { kind: PredicateKind.NET, urlContains: '/api/queue', method: 'GET' },
+        { kind: PredicateKind.TEXT, contains: 'Done' },
+      ],
+    });
     const foreignCall = ev(EventType.NET_REQUEST, {
       id: 'n104',
       method: 'GET',
@@ -1038,7 +1063,7 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), foreignCall], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ urlContains: '/api/queue' }],
+      namedNetClauses: declared.netClauses,
     });
     expect(found.map((c) => c.kind)).not.toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });

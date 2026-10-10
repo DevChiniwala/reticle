@@ -67,7 +67,7 @@ describe('a declared failing request is a declaration, not a contradiction', () 
     expect(declared.rendersContent).toBe(false);
   });
 
-  it('walks anyOf branches for net URLs — traffic the caller mentioned must not be filtered (#1234)', () => {
+  it('walks anyOf for netClauses but not for netUrls — the duplicate-request rule stays conservative (#1234)', () => {
     const declared = declaredExpectations({
       kind: PredicateKind.ANY_OF,
       predicates: [
@@ -75,7 +75,7 @@ describe('a declared failing request is a declaration, not a contradiction', () 
         { kind: PredicateKind.TEXT, contains: 'Welcome' },
       ],
     });
-    expect(declared.netUrls).toEqual(['/api/login']);
+    expect(declared.netUrls).toEqual([]);
     expect(declared.netClauses).toEqual([{ urlContains: '/api/login', method: 'POST' }]);
   });
 

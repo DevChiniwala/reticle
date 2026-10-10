@@ -24,7 +24,7 @@ import {
   urlForMatch,
   type ReticleEvent,
 } from '@reticlehq/core';
-import type { DeclaredNetClause } from '@/question/declared.js';
+import { matchesNetClause, type DeclaredNetClause } from '@/question/declared.js';
 
 export interface NetCall {
   method: string;
@@ -208,13 +208,8 @@ export function splitForeignTraffic(
     // must NOT re-admit all foreign traffic — that is the empty-string bug from #1234.
     if (namedNetClauses !== undefined && match !== undefined) {
       const method = asString(e.data['method']);
-      const matchesDeclared = namedNetClauses.some((clause) => {
-        if (clause.urlContains === undefined || 0 === clause.urlContains.length) return false;
-        if (!match.includes(clause.urlContains)) return false;
-        if (clause.method !== undefined && clause.method !== method) return false;
+      if (namedNetClauses.some((c) => matchesNetClause(c, { method: method ?? '', url: match })))
         return true;
-      });
-      if (matchesDeclared) return true;
     }
     if (shown !== undefined && !ignored.includes(shown)) ignored.push(shown);
     return false;
