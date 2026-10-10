@@ -350,7 +350,10 @@ export async function evalElement(
   const nearMiss = describeNameNearMiss(match.hint?.nameNearMiss, query.name, nearMissRole);
   const ariaNote = true === match.hint?.ariaHiddenMatch ? ARIA_HIDDEN_NOTE : undefined;
   const clause =
-    splitText ?? nearMiss ?? ariaNote ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
+    splitText ??
+    nearMiss ??
+    ariaNote ??
+    (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
   const suffix = clause === undefined ? '' : ` — ${clause}`;
   // The evidence list is capped in document order, so a region low on the page is exactly what it
   // drops. Handed back with no marker it reads as the whole page, and the field report this came
