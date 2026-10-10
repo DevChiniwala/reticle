@@ -13,11 +13,11 @@
  *    `route-rendered-nothing`, a clause the element evidence beside it disproves.
  *
  * Deliberately conservative about what counts as declared. For CONSEQUENCES (`netFailures`,
- * `rendersContent`), only the top level and `allOf` chains are walked: an `anyOf` branch may never
- * have held, and a `not` declares the opposite. For MENTIONED TRAFFIC (`netUrls`, `netClauses`),
- * `anyOf` is walked too: a request matching any declared clause is traffic the caller named, and
- * filtering it out of the contradiction window is the bug #1234 exists to fix.
- * Pure: a predicate in, a description out.
+ * `rendersContent`) and for NAMED TRAFFIC (`netUrls`), only the top level and `allOf` chains are
+ * walked: an `anyOf` branch may never have held, and a `not` declares the opposite. `netClauses`
+ * is the one exception — it walks `anyOf` too, because the foreign-traffic exemption (#1234) must
+ * admit a request ANY declared clause matched, and the duplicate-request rule (`netUrls`) is a
+ * separate question with its own conservatism. Pure: a predicate in, a description out.
  */
 
 import { PredicateKind, QueryBy, compareSourceClauses, type ElementQuery } from '@reticlehq/core';
@@ -145,6 +145,7 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
         for (const child of compareSourceClauses(p)) walk(child);
         return;
       case PredicateKind.NET: {
+        netUrls.push(p.urlContains ?? '');
         if (true === p.repeatable && p.urlContains !== undefined && p.urlContains.trim() !== '') {
           repeatableNetUrls.push({
             urlContains: p.urlContains,
@@ -192,7 +193,6 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
         for (const child of compareSourceClauses(p)) walkNet(child);
         return;
       case PredicateKind.NET:
-        netUrls.push(p.urlContains ?? '');
         netClauses.push({
           ...(p.urlContains === undefined ? {} : { urlContains: p.urlContains }),
           ...(p.method === undefined ? {} : { method: p.method }),
@@ -259,6 +259,23 @@ export function declaresBodyIndependentChannel(predicate: Predicate | undefined)
   };
 
   return walk(predicate);
+}
+
+/**
+ * Does a request match the URL and method constraints of a declared net clause?
+ *
+ * Shared by both the expected-failure matcher and the foreign-traffic exemption, so the two paths
+ * cannot drift apart on how they compare method or URL (#1234).
+ */
+export function matchesNetClause(
+  clause: DeclaredNetClause,
+  request: { method: string; url: string },
+): boolean {
+  if (clause.urlContains === undefined || 0 === clause.urlContains.length) return false;
+  if (!request.url.includes(clause.urlContains)) return false;
+  if (clause.method !== undefined && clause.method.toUpperCase() !== request.method.toUpperCase())
+    return false;
+  return true;
 }
 
 /**
