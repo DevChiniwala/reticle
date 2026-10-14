@@ -40,6 +40,8 @@ export interface DeclaredRead {
 export interface DeclaredNetClause {
   urlContains?: string;
   method?: string;
+  status?: number;
+  ok?: boolean;
 }
 
 interface DeclaredExpectations {
@@ -196,6 +198,8 @@ export function declaredExpectations(predicate: Predicate | undefined): Declared
         netClauses.push({
           ...(p.urlContains === undefined ? {} : { urlContains: p.urlContains }),
           ...(p.method === undefined ? {} : { method: p.method }),
+          ...(p.status === undefined ? {} : { status: p.status }),
+          ...(p.ok === undefined ? {} : { ok: p.ok }),
         });
         return;
       default:
@@ -262,19 +266,26 @@ export function declaresBodyIndependentChannel(predicate: Predicate | undefined)
 }
 
 /**
- * Does a request match the URL and method constraints of a declared net clause?
+ * Does a request match the constraints of a declared net clause?
  *
- * Shared by both the expected-failure matcher and the foreign-traffic exemption, so the two paths
- * cannot drift apart on how they compare method or URL (#1234).
+ * Checks URL, method, status and ok. Used by `matchesDeclaredFailure`, the foreign-traffic
+ * exemption and `isDeclaredRead`, so the paths cannot drift apart (#1234).
  */
 export function matchesNetClause(
   clause: DeclaredNetClause,
-  request: { method: string; url: string },
+  request: { method: string; url: string; status?: number | undefined; ok?: boolean | undefined },
 ): boolean {
   if (clause.urlContains === undefined || 0 === clause.urlContains.length) return false;
   if (!request.url.includes(clause.urlContains)) return false;
   if (clause.method !== undefined && clause.method.toUpperCase() !== request.method.toUpperCase())
     return false;
+  if (
+    clause.status !== undefined &&
+    request.status !== undefined &&
+    clause.status !== request.status
+  )
+    return false;
+  if (clause.ok !== undefined && request.ok !== undefined && clause.ok !== request.ok) return false;
   return true;
 }
 
@@ -290,10 +301,7 @@ export function matchesDeclaredFailure(
   declared: readonly DeclaredNetFailure[],
 ): boolean {
   return declared.some((d) => {
-    if (d.method !== undefined && d.method.toUpperCase() !== call.method.toUpperCase())
-      return false;
-    const haystack = call.matchUrl ?? call.url;
-    if (d.urlContains !== undefined && !haystack.includes(d.urlContains)) return false;
+    if (!matchesNetClause(d, { method: call.method, url: call.matchUrl ?? call.url })) return false;
     if (d.status !== undefined && d.status !== call.status) return false;
     return true;
   });
@@ -309,10 +317,7 @@ export function isDeclaredRead(
   reads: readonly DeclaredRead[] | undefined,
 ): boolean {
   if (reads === undefined) return false;
-  const haystack = call.matchUrl ?? call.url;
-  return reads.some(
-    (r) =>
-      haystack.includes(r.urlContains) &&
-      (r.method === undefined || r.method.toUpperCase() === call.method.toUpperCase()),
+  return reads.some((r) =>
+    matchesNetClause(r, { method: call.method, url: call.matchUrl ?? call.url }),
   );
 }

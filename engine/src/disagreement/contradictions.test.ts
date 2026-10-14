@@ -1045,6 +1045,22 @@ describe('the app announced a consequence and nothing else moved', () => {
     expect(found.map((c) => c.kind)).not.toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
 
+  it('does not re-admit a foreign 500 for a clause that asked for status 200 (#1234)', () => {
+    const foreign500 = ev(EventType.NET_REQUEST, {
+      id: 'n106',
+      method: 'GET',
+      url: 'http://127.0.0.1:8000/api/queue',
+      status: 500,
+      ok: false,
+    });
+    const found = findContradictions([signal('refresh:done'), foreign500], {
+      actionSince: 0,
+      appOrigin: 'http://localhost:3000',
+      namedNetClauses: [{ urlContains: '/api/queue', method: 'GET', status: 200, ok: true }],
+    });
+    expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
+  });
+
   it('walks anyOf branches when collecting declared net clauses (#1234)', () => {
     const declared = declaredExpectations({
       kind: PredicateKind.ANY_OF,
