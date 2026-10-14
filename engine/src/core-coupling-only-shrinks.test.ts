@@ -141,7 +141,15 @@ const MAX_FILES_IMPORTING_CORE = 45;
  * this number flat by breaking the rule it protects. It joins the import `predicate-eval.ts`
  * already has, so the file count is unmoved.
  */
-const MAX_DISTINCT_SYMBOLS = 65;
+/*
+ * 65 -> 67 for evicted buffer evidence (#1231).
+ *
+ * `channelsReadBy` maps a failing clause to the event-history channels it reads, and `Predicate`
+ * is the type alias the blind-spot check imports to walk the predicate tree. Both cross the
+ * engine/core boundary. They join the import `blind-spots.ts` already has, so the file count is
+ * unmoved.
+ */
+const MAX_DISTINCT_SYMBOLS = 67;
 
 /*
  * `node:path`'s dirname, not a hand-rolled one.
