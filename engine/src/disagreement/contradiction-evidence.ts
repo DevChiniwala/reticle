@@ -212,7 +212,13 @@ export function splitForeignTraffic(
     // must NOT re-admit all foreign traffic — that is the empty-string bug from #1234.
     if (namedNetClauses !== undefined && match !== undefined) {
       const method = asString(e.data['method']);
-      if (namedNetClauses.some((c) => matchesNetClause(c, { method: method ?? '', url: match })))
+      const status = 'number' === typeof e.data['status'] ? e.data['status'] : undefined;
+      const ok = 'boolean' === typeof e.data['ok'] ? e.data['ok'] : undefined;
+      if (
+        namedNetClauses.some((c) =>
+          matchesNetClause(c, { method: method ?? '', url: match, status, ok }),
+        )
+      )
         return true;
     }
     if (shown !== undefined && !ignored.includes(shown)) ignored.push(shown);
