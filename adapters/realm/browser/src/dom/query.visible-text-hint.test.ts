@@ -171,12 +171,19 @@ describe('ariaHiddenMatch hint names the accessibility exclusion (#1070)', () =>
     expect(r.hint?.ariaHiddenMatch).toBeUndefined();
   });
 
+  it('does not blame aria-hidden for a state miss like checked (#1070)', () => {
+    document.body.innerHTML = '<div aria-hidden="true"><span>Order confirmed</span></div>';
+    const r = matchQuery({ text: 'Order confirmed' }, ElementState.CHECKED);
+    expect(r.count).toBe(0);
+    expect(r.hint?.ariaHiddenMatch).toBeUndefined();
+  });
+
   it('skips the scan on interim polls (diagnose=false)', () => {
     document.body.innerHTML =
       '<div aria-hidden="true"><span>Order </span><span>confirmed</span></div>';
-    const interim = matchQuery({ text: 'Order confirmed' }, undefined, undefined, false);
+    const interim = matchQuery({ text: 'Order confirmed' }, undefined, undefined, undefined, false);
     expect(interim.hint?.ariaHiddenMatch).toBeUndefined();
-    const final = matchQuery({ text: 'Order confirmed' }, undefined, undefined, true);
+    const final = matchQuery({ text: 'Order confirmed' }, undefined, undefined, undefined, true);
     expect(final.hint?.ariaHiddenMatch).toBe(true);
   });
 });

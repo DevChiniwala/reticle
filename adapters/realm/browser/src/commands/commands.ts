@@ -324,7 +324,8 @@ export function createCommandRegistry(): Map<string, CommandHandler> {
       ElementQuerySchema.parse(record(args['query'])),
       str(args['state']) as ElementState | undefined,
       undefined,
-      true !== args['diagnose'] ? false : true,
+      undefined,
+      true === args['diagnose'],
     ),
   );
   reg.set(ReticleCommand.ACT, (args) => {
