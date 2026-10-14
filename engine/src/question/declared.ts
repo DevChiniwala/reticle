@@ -268,8 +268,10 @@ export function declaresBodyIndependentChannel(predicate: Predicate | undefined)
 /**
  * Does a request match the constraints of a declared net clause?
  *
- * Checks URL, method, status and ok. Used by `matchesDeclaredFailure`, the foreign-traffic
- * exemption and `isDeclaredRead`, so the paths cannot drift apart (#1234).
+ * Checks URL, method, status and ok. Shared by the foreign-traffic exemption and
+ * `isDeclaredRead` so the two paths cannot drift apart (#1234). Rejects a clause with no
+ * `urlContains` — a clause that names no URL matches nothing on this path. That guard does
+ * NOT apply to `matchesDeclaredFailure`, which has status-only clauses for auth denials.
  */
 export function matchesNetClause(
   clause: DeclaredNetClause,
@@ -301,7 +303,10 @@ export function matchesDeclaredFailure(
   declared: readonly DeclaredNetFailure[],
 ): boolean {
   return declared.some((d) => {
-    if (!matchesNetClause(d, { method: call.method, url: call.matchUrl ?? call.url })) return false;
+    if (d.method !== undefined && d.method.toUpperCase() !== call.method.toUpperCase())
+      return false;
+    const haystack = call.matchUrl ?? call.url;
+    if (d.urlContains !== undefined && !haystack.includes(d.urlContains)) return false;
     if (d.status !== undefined && d.status !== call.status) return false;
     return true;
   });
