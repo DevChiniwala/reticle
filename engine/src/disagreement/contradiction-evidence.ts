@@ -28,7 +28,8 @@ import {
   urlForMatch,
   type ReticleEvent,
 } from '@reticlehq/core';
-import { matchesNetClause, type DeclaredNetClause } from '@/question/declared.js';
+import { evalNet } from '@/question/predicate/predicate-eval.js';
+import type { DeclaredNetPredicate } from '@/question/declared.js';
 
 export interface NetCall {
   method: string;
@@ -190,7 +191,7 @@ export function splitForeignTraffic(
   events: readonly ReticleEvent[],
   appOrigin: string | undefined,
   background: readonly string[] = [],
-  namedNetClauses?: readonly DeclaredNetClause[],
+  namedNetClauses?: readonly DeclaredNetPredicate[],
 ): {
   app: readonly ReticleEvent[];
   ignored: string[];
@@ -207,16 +208,13 @@ export function splitForeignTraffic(
       return false;
     }
     if (!isForeignTraffic(match, appOrigin, background)) return true;
-    // Foreign traffic: keep only when a declared net clause matches this specific request.
-    // A clause with no urlContains names the whole channel for duplicate-request purposes, but
-    // must NOT re-admit all foreign traffic — that is the empty-string bug from #1234.
-    if (namedNetClauses !== undefined && match !== undefined) {
-      const method = asString(e.data['method']);
-      const status = 'number' === typeof e.data['status'] ? e.data['status'] : undefined;
-      const ok = 'boolean' === typeof e.data['ok'] ? e.data['ok'] : undefined;
+    // Foreign traffic: keep only when the predicate's own evaluator says this event matches a
+    // declared net clause that names a URL. A clause with no urlContains names the whole channel
+    // for duplicate-request purposes, but must NOT re-admit all foreign traffic (#1234).
+    if (namedNetClauses !== undefined) {
       if (
-        namedNetClauses.some((c) =>
-          matchesNetClause(c, { method: method ?? '', url: match, status, ok }),
+        namedNetClauses.some(
+          (c) => c.urlContains !== undefined && 0 !== c.urlContains.length && evalNet([e], c).pass,
         )
       )
         return true;

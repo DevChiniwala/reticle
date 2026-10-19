@@ -1,6 +1,10 @@
 import type { Contradiction, ContradictionKind, ReticleEvent } from '@reticlehq/core';
 import type { NoteFn } from '@/window/engine-host.js';
-import type { DeclaredNetClause, DeclaredNetFailure, DeclaredRead } from '@/question/declared.js';
+import type {
+  DeclaredNetFailure,
+  DeclaredNetPredicate,
+  DeclaredRead,
+} from '@/question/declared.js';
 
 /**
  * What a contradiction IS, separated from the rules that find one.
@@ -185,5 +189,5 @@ export interface ContradictionOptions {
    * (#1234). Unlike `namedNetUrls`, empty-URL clauses do NOT match all traffic (that would re-admit
    * dev tooling and analytics), and method is checked when the clause specified one.
    */
-  namedNetClauses?: readonly DeclaredNetClause[] | undefined;
+  namedNetClauses?: readonly DeclaredNetPredicate[] | undefined;
 }

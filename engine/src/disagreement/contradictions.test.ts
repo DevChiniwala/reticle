@@ -959,7 +959,7 @@ describe('the app announced a consequence and nothing else moved', () => {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
       namedNetUrls: ['/api/queue'],
-      namedNetClauses: [{ urlContains: '/api/queue', method: 'GET' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, urlContains: '/api/queue', method: 'GET' }],
     });
     expect(found.map((c) => c.kind)).not.toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -976,7 +976,7 @@ describe('the app announced a consequence and nothing else moved', () => {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
       namedNetUrls: ['/api/queue'],
-      namedNetClauses: [{ urlContains: '/api/queue' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, urlContains: '/api/queue' }],
     });
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -992,7 +992,7 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), hmrRequest], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ urlContains: '/api/queue' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, urlContains: '/api/queue' }],
     });
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -1008,7 +1008,7 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), foreignCall], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ method: 'POST' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, method: 'POST' }],
     });
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -1024,7 +1024,7 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), foreignPost], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ urlContains: '/api/queue', method: 'GET' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, urlContains: '/api/queue', method: 'GET' }],
     });
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -1040,7 +1040,7 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), foreignGet], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ urlContains: '/api/queue', method: 'get' }],
+      namedNetClauses: [{ kind: PredicateKind.NET, urlContains: '/api/queue', method: 'get' }],
     });
     expect(found.map((c) => c.kind)).not.toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
@@ -1056,7 +1056,31 @@ describe('the app announced a consequence and nothing else moved', () => {
     const found = findContradictions([signal('refresh:done'), foreign500], {
       actionSince: 0,
       appOrigin: 'http://localhost:3000',
-      namedNetClauses: [{ urlContains: '/api/queue', method: 'GET', status: 200, ok: true }],
+      namedNetClauses: [
+        {
+          kind: PredicateKind.NET,
+          urlContains: '/api/queue',
+          method: 'GET',
+          status: 200,
+          ok: true,
+        },
+      ],
+    });
+    expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
+  });
+
+  it('does not re-admit a request with no status for a clause that asked for status 200', () => {
+    const noStatus = ev(EventType.NET_REQUEST, {
+      id: 'n107',
+      method: 'GET',
+      url: 'http://127.0.0.1:8000/api/queue',
+    });
+    const found = findContradictions([signal('refresh:done'), noStatus], {
+      actionSince: 0,
+      appOrigin: 'http://localhost:3000',
+      namedNetClauses: [
+        { kind: PredicateKind.NET, urlContains: '/api/queue', method: 'GET', status: 200 },
+      ],
     });
     expect(found.map((c) => c.kind)).toContain(ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   });
